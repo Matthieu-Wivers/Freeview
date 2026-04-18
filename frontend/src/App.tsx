@@ -160,7 +160,6 @@ function App() {
                 onNext={goNext}
                 showBestMove={!showBestMove}
                 onToggleBestMove={() => setShowBestMove((value) => !value)}
-                suggestedMove={currentPositionReview}
                 sandboxFeedback={sandboxFeedback}
                 isSandboxActive={Boolean(sandboxFen)}
                 onResetSandbox={resetSandbox}  
