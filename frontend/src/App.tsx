@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { ParsedGame, SandboxFeedback } from './types/chess';
 import { AccuracySummary } from './components/AccuracySummary';
 import { ChessBoardPanel } from './components/ChessBoardPanel';
