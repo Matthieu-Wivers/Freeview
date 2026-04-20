@@ -123,7 +123,7 @@ export function MovesSidebar({
       </section>
 
         {currentPositionSuggestion ? (
-          <div className="review-card review-card--suggestion">
+          <div className="review-card review-card--suggestion" style={{display: "none"}}>
             <div className="review-card__header">
               <div>
                 <span className="meta-label">Meilleur coup dans la position affichée</span>
