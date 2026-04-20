@@ -39,7 +39,7 @@ class StockfishClient {
   private ready = false;
   private queue: Promise<void> = Promise.resolve();
 
-  private readonly workerUrl = `./src/public/stockfish/stockfish-18-lite-single.js`;
+  private readonly workerUrl = `${import.meta.env.BASE_URL}stockfish/stockfish-18-lite-single.js`;
 
   constructor() {
     this.createWorker();
@@ -80,7 +80,7 @@ class StockfishClient {
     return run;
   }
 
-  async waitUntilReady(timeoutMs = 10_000): Promise<void> {
+  async waitUntilReady(timeoutMs = 10000): Promise<void> {
     if (this.ready) return;
 
     const worker = this.getWorker();
@@ -132,8 +132,8 @@ class StockfishClient {
     const {
       movetime = 120,
       multiPv = 1,
-      readyTimeoutMs = 10_000,
-      searchTimeoutMs = Math.max(2_500, movetime + 1_500),
+      readyTimeoutMs = 10000,
+      searchTimeoutMs = Math.max(2500, movetime + 1500),
     } = options;
 
     return this.enqueue(async () => {

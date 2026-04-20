@@ -52,8 +52,8 @@ async function analyzePosition(fen: string, multiPv = 1): Promise<EngineResult> 
   return stockfish.analyze(fen, turn, {
     movetime: 120,
     multiPv,
-    readyTimeoutMs: 10_000,
-    searchTimeoutMs: 3_000,
+    readyTimeoutMs: 10000,
+    searchTimeoutMs: 3000,
   });
 }
 
@@ -79,20 +79,13 @@ export async function analyzeGameWithStockfish(game: ParsedGame): Promise<GameRe
 
   const analysisByFen = new Map<string, EngineResult>();
 
-  for (let index = 0; index < positions.length; index += 1) {
-    const fen = positions[index];
-
+  for (const fen of positions) {
     if (analysisByFen.has(fen)) continue;
-
-    const isBeforeMovePosition = index < positions.length - 1;
-    const multiPv = isBeforeMovePosition ? 1 : 1;
-
-    const analysis = await analyzePosition(fen, multiPv);
+    const analysis = await analyzePosition(fen, 1);
     analysisByFen.set(fen, analysis);
   }
 
   const evaluations: number[] = [];
-
   const initialAnalysis = analysisByFen.get(game.moves[0].fenBefore);
   evaluations.push(initialAnalysis?.bestScoreWhite ?? 0);
 
@@ -158,21 +151,19 @@ export async function analyzeSandboxMoveWithStockfish(
   san: string,
 ): Promise<SandboxFeedback> {
   const turnBefore = createChessFromFen(fenBefore).turn();
-
   const before = await stockfish.analyze(fenBefore, turnBefore, {
     movetime: 150,
     multiPv: 1,
-    readyTimeoutMs: 10_000,
-    searchTimeoutMs: 3_500,
+    readyTimeoutMs: 10000,
+    searchTimeoutMs: 3500,
   });
 
   const turnAfter = createChessFromFen(fenAfter).turn();
-
   const after = await stockfish.analyze(fenAfter, turnAfter, {
     movetime: 150,
     multiPv: 1,
-    readyTimeoutMs: 10_000,
-    searchTimeoutMs: 3_500,
+    readyTimeoutMs: 10000,
+    searchTimeoutMs: 3500,
   });
 
   const loss =
