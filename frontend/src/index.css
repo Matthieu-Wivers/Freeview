@@ -340,6 +340,7 @@ button {
 }
 
 .eval-panel {
+  overflow: scroll;
   margin-bottom: 18px;
 }
 
@@ -570,7 +571,7 @@ button {
 }
 
 .review-card {
-  display: none;
+  display: block;
 }
 
 .review-card,

@@ -38,6 +38,41 @@ export function MovesSidebar({
             <strong>{formatEval(review.finalEvaluation)}</strong>
           </div>
         </div>
+        {currentMoveReview ? (
+          <div className="review-card">
+            <div className="review-card__header">
+              <div>
+                <span className="meta-label">Played move</span>
+                <h3>{currentMoveReview.playedSan}</h3>
+              </div>
+              <ReviewBadge category={currentMoveReview.category} label={currentMoveReview.label} />
+            </div>
+
+            <p>{currentMoveReview.comment}</p>
+
+            <div className="review-stats-grid">
+              <div>
+                <span className="meta-label">Accuracy</span>
+                <strong>{Math.round(currentMoveReview.accuracy)}%</strong>
+              </div>
+              <div>
+                <span className="meta-label">Perte</span>
+                <strong>{currentMoveReview.loss.toFixed(2)}</strong>
+              </div>
+              <div>
+                <span className="meta-label">Meilleur coup</span>
+                <strong>{currentMoveReview.bestSan}</strong>
+              </div>
+              <div>
+                <span className="meta-label">Après le coup</span>
+                <strong>{formatEval(currentMoveReview.scoreAfter)}</strong>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+          </>
+        )}
       </section>
 
       <section className="panel move-list-panel">
@@ -86,44 +121,6 @@ export function MovesSidebar({
           })}
         </div>
       </section>
-      
-
-
-{currentMoveReview ? (
-          <div className="review-card">
-            <div className="review-card__header">
-              <div>
-                <span className="meta-label">Coup joué</span>
-                <h3>{currentMoveReview.playedSan}</h3>
-              </div>
-              <ReviewBadge category={currentMoveReview.category} label={currentMoveReview.label} />
-            </div>
-
-            <p>{currentMoveReview.comment}</p>
-
-            <div className="review-stats-grid">
-              <div>
-                <span className="meta-label">Accuracy</span>
-                <strong>{Math.round(currentMoveReview.accuracy)}%</strong>
-              </div>
-              <div>
-                <span className="meta-label">Perte</span>
-                <strong>{currentMoveReview.loss.toFixed(2)}</strong>
-              </div>
-              <div>
-                <span className="meta-label">Meilleur coup</span>
-                <strong>{currentMoveReview.bestSan}</strong>
-              </div>
-              <div>
-                <span className="meta-label">Après le coup</span>
-                <strong>{formatEval(currentMoveReview.scoreAfter)}</strong>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-          </>
-        )}
 
         {currentPositionSuggestion ? (
           <div className="review-card review-card--suggestion">

@@ -179,7 +179,7 @@ export default function App() {
                 }
                 onPrev={goPrev}
                 onNext={goNext}
-                showBestMove={showBestMove}
+                showBestMove={!showBestMove}
                 onToggleBestMove={() => setShowBestMove((value) => !value)}
                 sandboxFeedback={sandboxFeedback}
                 isSandboxActive={Boolean(sandboxFen)}
