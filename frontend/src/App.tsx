@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { ParsedGame, SandboxFeedback } from './types/chess';
+import type { GameReview, ParsedGame, SandboxFeedback } from './types/chess';
 import { AccuracySummary } from './components/AccuracySummary';
 import { ChessBoardPanel } from './components/ChessBoardPanel';
 import { EvalChart } from './components/EvalChart';
@@ -8,14 +8,17 @@ import { MovesSidebar } from './components/MovesSidebar';
 import { PgnInputPanel } from './components/PgnInputPanel';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 import { samplePgn } from './data/samplePgn';
-import { analyzeGame, analyzeSandboxMove } from './utils/analysis';
+import {
+  analyzeGameWithStockfish,
+  analyzeSandboxMoveWithStockfish,
+} from './utils/stockfishAnalysis';
 import { createChessFromFen, getFenAtPly } from './utils/chess';
 import { parsePgn } from './utils/pgn';
 
-function App() {
+export default function App() {
   const [pgnInput, setPgnInput] = useState(samplePgn);
   const [game, setGame] = useState<ParsedGame | null>(null);
-  const [review, setReview] = useState<ReturnType<typeof analyzeGame> | null>(null);
+  const [review, setReview] = useState<GameReview | null>(null);
   const [currentPly, setCurrentPly] = useState(0);
   const [boardOrientation, setBoardOrientation] = useState<'white' | 'black'>('white');
   const [showBestMove, setShowBestMove] = useState(true);
@@ -23,32 +26,37 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [sandboxFen, setSandboxFen] = useState<string | null>(null);
   const [sandboxFeedback, setSandboxFeedback] = useState<SandboxFeedback | null>(null);
+
   const playedMoveReview = currentPly > 0 ? review?.moveReviews[currentPly - 1] ?? null : null;
   const positionReview = review?.moveReviews[currentPly] ?? null;
 
-  const runAnalysis = useCallback((rawPgn: string) => {
+  const clearSandbox = useCallback(() => {
+    setSandboxFen(null);
+    setSandboxFeedback(null);
+  }, []);
+
+  const runAnalysis = useCallback(async (rawPgn: string) => {
     setIsLoading(true);
     setError(null);
 
-    window.setTimeout(() => {
-      try {
-        const parsed = parsePgn(rawPgn);
-        const analyzed = analyzeGame(parsed);
-        setGame(parsed);
-        setReview(analyzed);
-        setCurrentPly(0);
-        setSandboxFen(null);
-        setSandboxFeedback(null);
-      } catch (analysisError) {
-        setError(
-          analysisError instanceof Error
-            ? analysisError.message
-            : 'Une erreur inconnue est survenue pendant l’analyse.',
-        );
-      } finally {
-        setIsLoading(false);
-      }
-    }, 40);
+    try {
+      const parsed = parsePgn(rawPgn);
+      const analyzed = await analyzeGameWithStockfish(parsed);
+
+      setGame(parsed);
+      setReview(analyzed);
+      setCurrentPly(0);
+      setSandboxFen(null);
+      setSandboxFeedback(null);
+    } catch (analysisError) {
+      setError(
+        analysisError instanceof Error
+          ? analysisError.message
+          : 'Une erreur inconnue est survenue pendant l’analyse.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const maxPly = game?.moves.length ?? 0;
@@ -59,34 +67,29 @@ function App() {
   }, [game, currentPly]);
 
   const boardFen = sandboxFen ?? officialFen;
-
-  const currentPositionReview = useMemo(() => {
-    if (!review || !game) return null;
-    if (currentPly >= review.moveReviews.length) return null;
-    return review.moveReviews[currentPly];
-  }, [currentPly, game, review]);
-
   const currentEval = review?.evaluations[currentPly] ?? 0;
 
   const goPrev = useCallback(() => {
     setCurrentPly((value) => Math.max(value - 1, 0));
-    setSandboxFen(null);
-  }, []);
+    clearSandbox();
+  }, [clearSandbox]);
 
   const goNext = useCallback(() => {
     setCurrentPly((value) => Math.min(value + 1, maxPly));
-    setSandboxFen(null);
-  }, [maxPly]);
+    clearSandbox();
+  }, [clearSandbox, maxPly]);
 
-  const jumpToPly = useCallback((ply: number) => {
-    setCurrentPly(ply);
-    setSandboxFen(null);
-  }, []);
+  const jumpToPly = useCallback(
+    (ply: number) => {
+      setCurrentPly(ply);
+      clearSandbox();
+    },
+    [clearSandbox],
+  );
 
   const resetSandbox = useCallback(() => {
-    setSandboxFen(null);
-    setSandboxFeedback(null);
-  }, []);
+    clearSandbox();
+  }, [clearSandbox]);
 
   useKeyboardNavigation({
     max: maxPly,
@@ -99,12 +102,26 @@ function App() {
       const chess = createChessFromFen(boardFen);
 
       try {
-        const move = chess.move({ from: sourceSquare, to: targetSquare, promotion: 'q' });
+        const move = chess.move({
+          from: sourceSquare,
+          to: targetSquare,
+          promotion: 'q',
+        });
+
         if (!move) return false;
 
-        const feedback = analyzeSandboxMove(boardFen, `${move.from}${move.to}${move.promotion ?? ''}`, move.san);
-        setSandboxFen(chess.fen());
-        setSandboxFeedback(feedback);
+        const nextFen = chess.fen();
+        const uci = `${move.from}${move.to}${move.promotion ?? ''}`;
+
+        setSandboxFen(nextFen);
+        setSandboxFeedback(null);
+
+        void analyzeSandboxMoveWithStockfish(boardFen, nextFen, uci, move.san)
+          .then(setSandboxFeedback)
+          .catch(() => {
+            setSandboxFeedback(null);
+          });
+
         return true;
       } catch {
         return false;
@@ -116,23 +133,21 @@ function App() {
   return (
     <div className="app-shell">
       <div className="app-backdrop" />
-      <main className="app-content">
 
-        {!game && !review ? (
+      <main className="app-content">
+        {!game || !review ? (
           <PgnInputPanel
             value={pgnInput}
             onChange={setPgnInput}
-            onAnalyze={() => runAnalysis(pgnInput)}
+            onAnalyze={() => void runAnalysis(pgnInput)}
             onLoadSample={() => {
               setPgnInput(samplePgn);
-              runAnalysis(samplePgn);
+              void runAnalysis(samplePgn);
             }}
             isLoading={isLoading}
             error={error}
           />
-        ): ""
-
-        }
+        ) : null}
 
         {game && review ? (
           <>
@@ -146,7 +161,11 @@ function App() {
               />
             </div>
 
-            <EvalChart evaluations={review.evaluations} currentPly={currentPly} onSelect={jumpToPly} />
+            <EvalChart
+              evaluations={review.evaluations}
+              currentPly={currentPly}
+              onSelect={jumpToPly}
+            />
 
             <div className="main-grid">
               <ChessBoardPanel
@@ -155,14 +174,16 @@ function App() {
                 boardFen={boardFen}
                 boardOrientation={boardOrientation}
                 onPieceDrop={handlePieceDrop}
-                onFlip={() => setBoardOrientation((value) => (value === 'white' ? 'black' : 'white'))}
+                onFlip={() =>
+                  setBoardOrientation((value) => (value === 'white' ? 'black' : 'white'))
+                }
                 onPrev={goPrev}
                 onNext={goNext}
-                showBestMove={!showBestMove}
+                showBestMove={showBestMove}
                 onToggleBestMove={() => setShowBestMove((value) => !value)}
                 sandboxFeedback={sandboxFeedback}
                 isSandboxActive={Boolean(sandboxFen)}
-                onResetSandbox={resetSandbox}  
+                onResetSandbox={resetSandbox}
                 playedMoveReview={playedMoveReview}
                 positionReview={positionReview}
               />
@@ -183,5 +204,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
