@@ -18,6 +18,7 @@ export const CATEGORY_ORDER: ReviewCategory[] = [
   'excellent',
   'good',
   'inaccuracy',
+  'miss',
   'mistake',
   'blunder',
 ];
@@ -28,18 +29,20 @@ export const CATEGORY_LABELS: Record<ReviewCategory, string> = {
   excellent: '!',
   good: '★',
   inaccuracy: '≈',
+  miss: '?!',
   mistake: '?',
   blunder: '??',
 };
 
 export const CATEGORY_COMMENTS: Record<ReviewCategory, string> = {
-  theory: 'Consistent and natural start. Nothing to report here.',
-  best: 'Consistent and natural start. Nothing to report here.',
-  excellent: 'Very good choice, almost at the level of the best shot.',
+  theory: 'Still in theory. This is a known, on-book continuation.',
+  best: 'Brilliant-like move: a rare best move with a real sacrifice or uniquely strong idea.',
+  excellent: 'Excellent move. Best or near-best without the special conditions for a brilliant move.',
   good: 'Healthy and playable move, even if a slightly stronger option existed.',
   inaccuracy: 'The idea works, but you leave a little advantage to the opponent.',
-  mistake: 'The move clearly degrades the position and is worth revisiting.',
-  blunder: 'The move leaks way too much value in the position.',
+  miss: 'You missed a strong tactical or winning opportunity, but the move was not a total collapse.',
+  mistake: 'A clear mistake that worsens the position.',
+  blunder: 'A very serious error that throws away major value or the game.',
 };
 
 export const CATEGORY_ACCURACY: Record<ReviewCategory, number> = {
@@ -48,6 +51,7 @@ export const CATEGORY_ACCURACY: Record<ReviewCategory, number> = {
   excellent: 92,
   good: 80,
   inaccuracy: 62,
+  miss: 50,
   mistake: 35,
   blunder: 10,
 };

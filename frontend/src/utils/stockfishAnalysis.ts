@@ -3,21 +3,59 @@ import type {
   GameReview,
   MoveReview,
   ParsedGame,
+  ReviewCategory,
   SandboxFeedback,
 } from '../types/chess';
-import { CATEGORY_ACCURACY, CATEGORY_COMMENTS, CATEGORY_LABELS } from './constants';
+import {
+  CATEGORY_ACCURACY,
+  CATEGORY_COMMENTS,
+  CATEGORY_LABELS,
+  PIECE_VALUES,
+} from './constants';
 import { average, clamp } from './format';
 import { createChessFromFen } from './chess';
 import { stockfish, type EngineResult } from '../engine/stockfish';
 
-function classifyMove(loss: number, ply: number) {
-  if (ply <= 10 && loss <= 0.12) return 'theory' as const;
-  if (loss <= 0.08) return 'best' as const;
-  if (loss <= 0.28) return 'excellent' as const;
-  if (loss <= 0.65) return 'good' as const;
-  if (loss <= 1.2) return 'inaccuracy' as const;
-  if (loss <= 2.2) return 'mistake' as const;
-  return 'blunder' as const;
+type Turn = 'w' | 'b';
+
+function scoreForMover(scoreWhite: number, turn: Turn): number {
+  return turn === 'w' ? scoreWhite : -scoreWhite;
+}
+
+function getMaterialBalanceWhite(fen: string): number {
+  const chess = createChessFromFen(fen);
+  const board = chess.board();
+
+  let total = 0;
+
+  for (const row of board) {
+    for (const piece of row) {
+      if (!piece) continue;
+      const value = PIECE_VALUES[piece.type] ?? 0;
+      total += piece.color === 'w' ? value : -value;
+    }
+  }
+
+  return total;
+}
+
+function getMaterialForMover(fen: string, turn: Turn): number {
+  const whiteBalance = getMaterialBalanceWhite(fen);
+  return turn === 'w' ? whiteBalance : -whiteBalance;
+}
+
+function getBestGapForMover(
+  lines: EngineResult['lines'],
+  bestScoreWhite: number,
+  turn: Turn,
+): number {
+  const sorted = [...lines].sort((a, b) => a.multipv - b.multipv);
+  const bestScoreForMover = scoreForMover(sorted[0]?.scoreWhite ?? bestScoreWhite, turn);
+  const second = sorted[1];
+
+  if (!second) return 0;
+
+  return bestScoreForMover - scoreForMover(second.scoreWhite, turn);
 }
 
 function uciToSan(fen: string, uci: string): string {
@@ -44,6 +82,68 @@ function buildSuggestions(
     to: line.uci.slice(2, 4),
     scoreWhite: line.scoreWhite,
   }));
+}
+
+function classifyMove(args: {
+  ply: number;
+  loss: number;
+  isExactBest: boolean;
+  theoryStillOpen: boolean;
+  moverMaterialBefore: number;
+  moverMaterialAfter: number;
+  bestGap: number;
+  bestScoreForMover: number;
+  actualScoreForMover: number;
+}): ReviewCategory {
+  const {
+    ply,
+    loss,
+    isExactBest,
+    theoryStillOpen,
+    moverMaterialBefore,
+    moverMaterialAfter,
+    bestGap,
+    bestScoreForMover,
+    actualScoreForMover,
+  } = args;
+
+  const sacrificedMaterial = moverMaterialBefore - moverMaterialAfter;
+  const hasRealSacrifice = sacrificedMaterial >= 1.75;
+  const canStillBeTheory = theoryStillOpen && ply <= 12;
+
+  if (canStillBeTheory && isExactBest && loss <= 0.03) {
+    return 'theory';
+  }
+
+  const isBrilliantLike =
+    !canStillBeTheory &&
+    isExactBest &&
+    loss <= 0.05 &&
+    hasRealSacrifice &&
+    bestGap >= 0.5 &&
+    bestScoreForMover > -1.5 &&
+    bestScoreForMover < 4.5;
+
+  if (isBrilliantLike) {
+    return 'best';
+  }
+
+  const missedWinningChance =
+    !isExactBest &&
+    bestScoreForMover >= 1.8 &&
+    actualScoreForMover < 0.9 &&
+    actualScoreForMover > -2.5 &&
+    loss >= 0.9;
+
+  if (missedWinningChance) {
+    return 'miss';
+  }
+
+  if (isExactBest || loss <= 0.08) return 'excellent';
+  if (loss <= 0.22) return 'good';
+  if (loss <= 0.55) return 'inaccuracy';
+  if (loss <= 1.5 || actualScoreForMover > -3) return 'mistake';
+  return 'blunder';
 }
 
 async function analyzePosition(fen: string, multiPv = 1): Promise<EngineResult> {
@@ -77,17 +177,22 @@ export async function analyzeGameWithStockfish(game: ParsedGame): Promise<GameRe
     ...game.moves.map((move) => move.fenAfter),
   ];
 
+  const beforePositionSet = new Set(game.moves.map((move) => move.fenBefore));
   const analysisByFen = new Map<string, EngineResult>();
 
   for (const fen of positions) {
     if (analysisByFen.has(fen)) continue;
-    const analysis = await analyzePosition(fen, 1);
+
+    const multiPv = beforePositionSet.has(fen) ? 3 : 1;
+    const analysis = await analyzePosition(fen, multiPv);
     analysisByFen.set(fen, analysis);
   }
 
   const evaluations: number[] = [];
   const initialAnalysis = analysisByFen.get(game.moves[0].fenBefore);
   evaluations.push(initialAnalysis?.bestScoreWhite ?? 0);
+
+  let theoryStillOpen = true;
 
   for (const move of game.moves) {
     const before = analysisByFen.get(move.fenBefore);
@@ -100,12 +205,34 @@ export async function analyzeGameWithStockfish(game: ParsedGame): Promise<GameRe
     const turnBefore = createChessFromFen(move.fenBefore).turn();
     const bestSan = uciToSan(move.fenBefore, before.bestUci);
 
-    const loss =
+    const rawLoss =
       turnBefore === 'w'
         ? before.bestScoreWhite - after.bestScoreWhite
         : after.bestScoreWhite - before.bestScoreWhite;
 
-    const category = classifyMove(Math.max(loss, 0), move.ply);
+    const loss = Math.max(rawLoss, 0);
+    const isExactBest = move.uci === before.bestUci;
+    const bestGap = getBestGapForMover(before.lines, before.bestScoreWhite, turnBefore);
+    const bestScoreForMover = scoreForMover(before.bestScoreWhite, turnBefore);
+    const actualScoreForMover = scoreForMover(after.bestScoreWhite, turnBefore);
+    const moverMaterialBefore = getMaterialForMover(move.fenBefore, turnBefore);
+    const moverMaterialAfter = getMaterialForMover(move.fenAfter, turnBefore);
+
+    const category = classifyMove({
+      ply: move.ply,
+      loss,
+      isExactBest,
+      theoryStillOpen,
+      moverMaterialBefore,
+      moverMaterialAfter,
+      bestGap,
+      bestScoreForMover,
+      actualScoreForMover,
+    });
+
+    if (theoryStillOpen && category !== 'theory') {
+      theoryStillOpen = false;
+    }
 
     moveReviews.push({
       ply: move.ply,
@@ -117,7 +244,7 @@ export async function analyzeGameWithStockfish(game: ParsedGame): Promise<GameRe
       scoreAfter: after.bestScoreWhite,
       bestScoreWhite: before.bestScoreWhite,
       actualScoreWhite: after.bestScoreWhite,
-      loss: Number(Math.max(loss, 0).toFixed(2)),
+      loss: Number(loss.toFixed(2)),
       category,
       label: CATEGORY_LABELS[category],
       comment: CATEGORY_COMMENTS[category],
@@ -151,14 +278,16 @@ export async function analyzeSandboxMoveWithStockfish(
   san: string,
 ): Promise<SandboxFeedback> {
   const turnBefore = createChessFromFen(fenBefore).turn();
+
   const before = await stockfish.analyze(fenBefore, turnBefore, {
     movetime: 150,
-    multiPv: 1,
+    multiPv: 3,
     readyTimeoutMs: 10000,
     searchTimeoutMs: 3500,
   });
 
   const turnAfter = createChessFromFen(fenAfter).turn();
+
   const after = await stockfish.analyze(fenAfter, turnAfter, {
     movetime: 150,
     multiPv: 1,
@@ -166,19 +295,37 @@ export async function analyzeSandboxMoveWithStockfish(
     searchTimeoutMs: 3500,
   });
 
-  const loss =
+  const rawLoss =
     turnBefore === 'w'
       ? before.bestScoreWhite - after.bestScoreWhite
       : after.bestScoreWhite - before.bestScoreWhite;
 
-  const category = classifyMove(Math.max(loss, 0), 99);
+  const loss = Math.max(rawLoss, 0);
+  const isExactBest = uci === before.bestUci;
+  const bestGap = getBestGapForMover(before.lines, before.bestScoreWhite, turnBefore);
+  const bestScoreForMover = scoreForMover(before.bestScoreWhite, turnBefore);
+  const actualScoreForMover = scoreForMover(after.bestScoreWhite, turnBefore);
+  const moverMaterialBefore = getMaterialForMover(fenBefore, turnBefore);
+  const moverMaterialAfter = getMaterialForMover(fenAfter, turnBefore);
+
+  const category = classifyMove({
+    ply: 99,
+    loss,
+    isExactBest,
+    theoryStillOpen: false,
+    moverMaterialBefore,
+    moverMaterialAfter,
+    bestGap,
+    bestScoreForMover,
+    actualScoreForMover,
+  });
 
   return {
     san,
     uci,
     bestSan: uciToSan(fenBefore, before.bestUci),
     bestUci: before.bestUci,
-    loss: Number(Math.max(loss, 0).toFixed(2)),
+    loss: Number(loss.toFixed(2)),
     category,
     comment: CATEGORY_COMMENTS[category],
     accuracy: clamp(CATEGORY_ACCURACY[category], 0, 100),

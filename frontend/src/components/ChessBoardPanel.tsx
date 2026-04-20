@@ -43,8 +43,9 @@ const CATEGORY_COLORS: Record<ReviewCategory, string> = {
   theory: '#94a3b8',
   best: '#3b82f6',
   excellent: '#16a34a',
-  good: '#86efac',
-  inaccuracy: '#facc15',
+  good: '#29f875',
+  inaccuracy: '#86efac',
+  miss: "#facc15",
   mistake: '#fb923c',
   blunder: '#ef4444',
 };

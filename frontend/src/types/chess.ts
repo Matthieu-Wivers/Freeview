@@ -6,6 +6,7 @@ export type ReviewCategory =
   | 'excellent'
   | 'good'
   | 'inaccuracy'
+  | 'miss'
   | 'mistake'
   | 'blunder';
 

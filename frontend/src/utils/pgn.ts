@@ -1,5 +1,6 @@
 import { Chess } from 'chess.js';
 import type { GameHeaders, ParsedGame, ParsedMove } from '../types/chess';
+import { normalizeSanForDisplay } from './notation';
 
 const TAG_REGEX = /^\[(\w+)\s+"(.*)"\]$/gm;
 
@@ -32,9 +33,7 @@ export function normalizePgn(rawPgn: string): string {
   }
 
   const headerBlock = headerLines.join('\n');
-  const movesBlock = moveLines.join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const movesBlock = moveLines.join(' ').replace(/\s+/g, ' ').trim();
 
   if (headerBlock && movesBlock) {
     return `${headerBlock}\n\n${movesBlock}`;
@@ -49,9 +48,11 @@ export function normalizePgn(rawPgn: string): string {
 
 export function parseHeaders(pgn: string): GameHeaders {
   const headers: GameHeaders = {};
+
   for (const match of pgn.matchAll(TAG_REGEX)) {
     headers[match[1]] = match[2];
   }
+
   return headers;
 }
 
@@ -59,6 +60,7 @@ export function parsePgn(rawPgn: string): ParsedGame {
   const normalizedPgn = normalizePgn(rawPgn);
   const headers = parseHeaders(normalizedPgn);
   const startFen = headers.SetUp === '1' && headers.FEN ? headers.FEN : undefined;
+
   const chess = new Chess(startFen);
 
   try {
@@ -79,6 +81,7 @@ export function parsePgn(rawPgn: string): ParsedGame {
   }>;
 
   const replay = new Chess(startFen);
+
   const moves: ParsedMove[] = history.map((entry, index) => {
     const fenBefore = replay.fen();
     const applied = replay.move({
@@ -95,7 +98,7 @@ export function parsePgn(rawPgn: string): ParsedGame {
       ply: index + 1,
       moveNumber: Math.floor(index / 2) + 1,
       color: entry.color,
-      san: entry.san,
+      san: normalizeSanForDisplay(entry.san),
       from: entry.from,
       to: entry.to,
       uci: `${entry.from}${entry.to}${entry.promotion ?? ''}`,
