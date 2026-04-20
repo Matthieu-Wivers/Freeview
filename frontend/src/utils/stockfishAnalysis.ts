@@ -8,7 +8,7 @@ import type {
 import { CATEGORY_ACCURACY, CATEGORY_COMMENTS, CATEGORY_LABELS } from './constants';
 import { average, clamp } from './format';
 import { createChessFromFen } from './chess';
-import { stockfish } from '../engine/stockfish';
+import { stockfish, type EngineResult } from '../engine/stockfish';
 
 function classifyMove(loss: number, ply: number) {
   if (ply <= 10 && loss <= 0.12) return 'theory' as const;
@@ -21,12 +21,15 @@ function classifyMove(loss: number, ply: number) {
 }
 
 function uciToSan(fen: string, uci: string): string {
+  if (!uci || uci.length < 4) return uci;
+
   const chess = createChessFromFen(fen);
   const move = chess.move({
     from: uci.slice(0, 2),
     to: uci.slice(2, 4),
     promotion: (uci[4] as 'q' | 'r' | 'b' | 'n' | undefined) ?? undefined,
   });
+
   return move?.san ?? uci;
 }
 
@@ -43,18 +46,67 @@ function buildSuggestions(
   }));
 }
 
+async function analyzePosition(fen: string, multiPv = 1): Promise<EngineResult> {
+  const turn = createChessFromFen(fen).turn();
+
+  return stockfish.analyze(fen, turn, {
+    movetime: 120,
+    multiPv,
+    readyTimeoutMs: 10_000,
+    searchTimeoutMs: 3_000,
+  });
+}
+
 export async function analyzeGameWithStockfish(game: ParsedGame): Promise<GameReview> {
   const moveReviews: MoveReview[] = [];
-  const evaluations: number[] = [0];
+
+  if (game.moves.length === 0) {
+    return {
+      moveReviews: [],
+      accuracyWhite: 0,
+      accuracyBlack: 0,
+      averageLossWhite: 0,
+      averageLossBlack: 0,
+      evaluations: [0],
+      finalEvaluation: 0,
+    };
+  }
+
+  const positions: string[] = [
+    game.moves[0].fenBefore,
+    ...game.moves.map((move) => move.fenAfter),
+  ];
+
+  const analysisByFen = new Map<string, EngineResult>();
+
+  for (let index = 0; index < positions.length; index += 1) {
+    const fen = positions[index];
+
+    if (analysisByFen.has(fen)) continue;
+
+    const isBeforeMovePosition = index < positions.length - 1;
+    const multiPv = isBeforeMovePosition ? 1 : 1;
+
+    const analysis = await analyzePosition(fen, multiPv);
+    analysisByFen.set(fen, analysis);
+  }
+
+  const evaluations: number[] = [];
+
+  const initialAnalysis = analysisByFen.get(game.moves[0].fenBefore);
+  evaluations.push(initialAnalysis?.bestScoreWhite ?? 0);
 
   for (const move of game.moves) {
+    const before = analysisByFen.get(move.fenBefore);
+    const after = analysisByFen.get(move.fenAfter);
+
+    if (!before || !after) {
+      throw new Error('Analyse Stockfish incomplète pour une ou plusieurs positions.');
+    }
+
     const turnBefore = createChessFromFen(move.fenBefore).turn();
-    const turnAfter = createChessFromFen(move.fenAfter).turn();
-
-    const before = await stockfish.analyze(move.fenBefore, turnBefore, 12, 3);
-    const after = await stockfish.analyze(move.fenAfter, turnAfter, 12, 1);
-
     const bestSan = uciToSan(move.fenBefore, before.bestUci);
+
     const loss =
       turnBefore === 'w'
         ? before.bestScoreWhite - after.bestScoreWhite
@@ -68,7 +120,7 @@ export async function analyzeGameWithStockfish(game: ParsedGame): Promise<GameRe
       playedUci: move.uci,
       bestSan,
       bestUci: before.bestUci,
-      scoreBefore: evaluations[evaluations.length - 1] ?? 0,
+      scoreBefore: before.bestScoreWhite,
       scoreAfter: after.bestScoreWhite,
       bestScoreWhite: before.bestScoreWhite,
       actualScoreWhite: after.bestScoreWhite,
@@ -106,10 +158,22 @@ export async function analyzeSandboxMoveWithStockfish(
   san: string,
 ): Promise<SandboxFeedback> {
   const turnBefore = createChessFromFen(fenBefore).turn();
+
+  const before = await stockfish.analyze(fenBefore, turnBefore, {
+    movetime: 150,
+    multiPv: 1,
+    readyTimeoutMs: 10_000,
+    searchTimeoutMs: 3_500,
+  });
+
   const turnAfter = createChessFromFen(fenAfter).turn();
 
-  const before = await stockfish.analyze(fenBefore, turnBefore, 12, 3);
-  const after = await stockfish.analyze(fenAfter, turnAfter, 12, 1);
+  const after = await stockfish.analyze(fenAfter, turnAfter, {
+    movetime: 150,
+    multiPv: 1,
+    readyTimeoutMs: 10_000,
+    searchTimeoutMs: 3_500,
+  });
 
   const loss =
     turnBefore === 'w'
