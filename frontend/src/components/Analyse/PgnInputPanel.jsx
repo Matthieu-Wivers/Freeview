@@ -1,21 +1,5 @@
-interface PgnInputPanelProps {
-  value: string;
-  onChange: (value: string) => void;
-  onAnalyze: () => void;
-  onLoadSample: () => void;
-  isLoading: boolean;
-  error?: string | null;
-}
-
-export function PgnInputPanel({
-  value,
-  onChange,
-  onAnalyze,
-  onLoadSample,
-  isLoading,
-  error,
-}: PgnInputPanelProps) {
-  return (
+export function PgnInputPanel({ value, onChange, onAnalyze, onLoadSample, loadSample, isLoading, error, }) {
+    return (
     <section className="panel input-panel">
       <div className="section-title-row section-title-row--stacked">
         <div>
@@ -28,21 +12,17 @@ export function PgnInputPanel({
         </p>
       </div>
 
-      <textarea
-        className="pgn-textarea"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        spellCheck={false}
-        placeholder="Paste a PGN here..."
-      />
+      <textarea className="pgn-textarea" value={value} onChange={(event) => onChange(event.target.value)} spellCheck={false} placeholder="Paste a PGN here..."/>
 
       <div className="input-actions">
         <button type="button" className="btn btn--primary" onClick={onAnalyze} disabled={isLoading}>
           {isLoading ? 'Analyzing...' : 'Analyze this game'}
         </button>
+        <button type="button" className="btn btn--primary" onClick={loadSample} disabled={isLoading}>
+          Load sample
+        </button>
       </div>
 
       {error ? <p className="error-text">{error}</p> : null}
-    </section>
-  );
+    </section>);
 }

@@ -1,11 +1,4 @@
-import type { GameHeaders } from '../types/chess';
-import { formatDate } from '../utils/format';
-
-interface GameHeaderProps {
-  headers: GameHeaders;
-}
-
-export function GameHeader({ headers }: GameHeaderProps) {
+export function GameHeader({ headers }) {
   return (
     <section className="panel game-header">
       <div className="game-header__topline">

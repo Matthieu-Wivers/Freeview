@@ -75,6 +75,10 @@ button {
     radial-gradient(circle at 60% 80%, rgba(34, 197, 94, 0.06), transparent 24%);
 }
 
+.app-frame {
+  zoom: 85%
+}
+
 .app-content {
   position: relative;
   z-index: 1;
