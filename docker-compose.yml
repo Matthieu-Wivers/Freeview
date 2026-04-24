@@ -1,10 +1,46 @@
 services:
-  freeview:
-    container_name: freeview
-    image: docker.io/${DOCKERHUB_USERNAME}/freeview:${IMAGE_TAG:-latest}
+  web:
+    container_name: freeview-web
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - "${APP_PORT:-8080}:80"
+    environment:
+      INTERNAL_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:?set INTERNAL_GATEWAY_TOKEN in .env}
+    depends_on:
+      api:
+        condition: service_healthy
     restart: unless-stopped
+
+  api:
+    container_name: freeview-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    expose:
+      - "3000"
+    environment:
+      PORT: ${PORT:-3000}
+      NODE_ENV: ${NODE_ENV:-production}
+      STOCKFISH_PATH: ${STOCKFISH_PATH:-/usr/games/stockfish}
+      MAX_CONCURRENT_ANALYSES: ${MAX_CONCURRENT_ANALYSES:-1}
+      MAX_QUEUE_SIZE: ${MAX_QUEUE_SIZE:-8}
+      MAX_MOVETIME_MS: ${MAX_MOVETIME_MS:-500}
+      DEFAULT_MOVETIME_MS: ${DEFAULT_MOVETIME_MS:-120}
+      MAX_MULTIPV: ${MAX_MULTIPV:-3}
+      API_ADMIN_TOKEN: ${API_ADMIN_TOKEN:?set API_ADMIN_TOKEN in .env}
+      INTERNAL_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:?set INTERNAL_GATEWAY_TOKEN in .env}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+    restart: unless-stopped
+    cpus: "1.0"
+    mem_limit: 512m
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "const http=require('http');const req=http.request({host:'127.0.0.1',port:process.env.PORT||3000,path:'/api/health',headers:{'X-Internal-Gateway':process.env.INTERNAL_GATEWAY_TOKEN}},res=>process.exit(res.statusCode===200?0:1));req.on('error',()=>process.exit(1));req.end();"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
