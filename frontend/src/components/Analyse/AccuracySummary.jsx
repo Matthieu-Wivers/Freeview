@@ -1,18 +1,6 @@
-import { toPercent } from '../utils/format';
+import { toPercent } from '../../utils/format';
 
-interface AccuracySummaryProps {
-  whiteName: string;
-  blackName: string;
-  accuracyWhite: number;
-  accuracyBlack: number;
-}
-
-export function AccuracySummary({
-  whiteName,
-  blackName,
-  accuracyWhite,
-  accuracyBlack,
-}: AccuracySummaryProps) {
+export function AccuracySummary({ whiteName, blackName, accuracyWhite, accuracyBlack, }) {
   return (
     <section className="panel accuracy-panel">
       <div className="section-title-row">
