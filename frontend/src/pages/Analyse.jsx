@@ -117,18 +117,32 @@ export default function Analyse() {
         setPgnInput(samplePgn);
     };
 
+    const loadPgnInput = () => {
+        setVisiblePgnArea(!visiblePgnArea);
+    };
+
+    console.log(game, review, visiblePgnArea)
+
     return (
     <div>
       <div className="app-backdrop"/>
 
       <main className="app-content">
-        {!game || !review ? (<PgnInputPanel value={pgnInput} onChange={setPgnInput} onAnalyze={() => void runAnalysis(pgnInput)} onLoadSample={() => {
-                setPgnInput('');
-            }} loadSample={loadSample} isLoading={isLoading} error={error}/>) : review && visiblePgnArea ? (<PgnInputPanel value={pgnInput} onChange={setPgnInput} onAnalyze={() => void runAnalysis(pgnInput)} onLoadSample={() => {
-                setPgnInput('');
-            }} loadSample={loadSample} isLoading={isLoading} error={error}/>) : (<button onClick={setVisiblePgnArea(!visiblePgnArea)}>
-            show pgn area
-          </button>)}
+        {!game || !review ? (
+            <PgnInputPanel 
+                value={pgnInput} 
+                onChange={setPgnInput} 
+                onAnalyze={() => void runAnalysis(pgnInput)} 
+                onLoadSample={() => {
+                    setPgnInput('');
+                }} 
+                loadSample={loadSample} 
+                isLoading={isLoading} 
+                error={error}
+            />
+        ) : <button className="btn btn--primary" onClick={loadPgnInput}>
+                show pgn area
+            </button>}
 
         {game && review ? (<>
             <div className="top-grid">

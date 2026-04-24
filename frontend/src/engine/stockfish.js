@@ -45,7 +45,7 @@ class StockfishClient {
         this.queue = run.then(() => undefined, () => undefined);
         return run;
     }
-    async waitUntilReady(timeoutMs = 10000) {
+    async waitUntilReady(timeoutMs = 15000) {
         if (this.ready)
             return;
         const worker = this.getWorker();
