@@ -32,6 +32,7 @@ export const env = Object.freeze({
   maxMovetimeMs: parseInteger('MAX_MOVETIME_MS', 500, { min: 50, max: 5000 }),
   defaultMovetimeMs: parseInteger('DEFAULT_MOVETIME_MS', 120, { min: 50, max: 5000 }),
   maxMultiPv: parseInteger('MAX_MULTIPV', 3, { min: 1, max: 10 }),
+  maxStreamPositions: parseInteger('MAX_STREAM_POSITIONS', 160, { min: 1, max: 500 }),
   trustProxy: process.env.TRUST_PROXY === '1' ? 1 : false,
   apiAdminToken: readRequiredSecret('API_ADMIN_TOKEN'),
   internalGatewayToken: readRequiredSecret('INTERNAL_GATEWAY_TOKEN'),
