@@ -1,7 +1,7 @@
 FROM node:22-bookworm-slim
 
 ARG STOCKFISH_VERSION=sf_18
-ARG STOCKFISH_ARCH=stockfish-ubuntu-x86-64-avx2
+ARG STOCKFISH_ARCH=stockfish-ubuntu-x86-64
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl tar findutils \
