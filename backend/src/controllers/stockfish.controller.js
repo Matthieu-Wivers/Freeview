@@ -39,7 +39,29 @@ function normalizePositionRequest(item, index) {
     index,
     fen: parsedFen.fen,
     turn: parsedFen.turn,
-    movetime: clampInteger(item?.movetime, env.defaultMovetimeMs, 50, env.maxMovetimeMs),
+
+    depth: clampInteger(
+      item?.depth,
+      env.stockfishDefaultDepth,
+      1,
+      env.stockfishMaxDepth,
+    ),
+
+    nodes: clampInteger(
+      item?.nodes,
+      env.stockfishDefaultNodes,
+      1_000,
+      env.stockfishMaxNodes,
+    ),
+
+    movetime: clampInteger(
+      item?.movetime,
+      env.defaultMovetimeMs,
+      50,
+      env.maxMovetimeMs,
+    ),
+
+    // Important : 1 par défaut pour les meilleurs résultats.
     multiPv: clampInteger(item?.multiPv, 1, 1, env.maxMultiPv),
   };
 }
@@ -80,12 +102,14 @@ function writeSseEvent(res, event, data) {
 
 function setupSseResponse(res) {
   res.status(200);
+
   res.set({
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
+
   res.flushHeaders?.();
 }
 
@@ -105,6 +129,13 @@ async function streamPositions(req, res, positions) {
   writeSseEvent(res, 'started', {
     total: positions.length,
     queue: analysisQueue.getStats(),
+    stockfish: {
+      mode: env.stockfishSearchMode,
+      defaultDepth: env.stockfishDefaultDepth,
+      maxDepth: env.stockfishMaxDepth,
+      threads: env.stockfishThreads,
+      hashMb: env.stockfishHashMb,
+    },
   });
 
   for (const position of positions) {
@@ -130,6 +161,7 @@ async function streamPositions(req, res, positions) {
         message: error.message || 'Erreur Stockfish côté serveur.',
         status: error.status || 500,
       });
+
       res.end();
       return;
     }
@@ -154,15 +186,18 @@ export async function analyzeStockfish(req, res, next) {
       });
     }
 
-    const movetime = clampInteger(req.body?.movetime, env.defaultMovetimeMs, 50, env.maxMovetimeMs);
-    const multiPv = clampInteger(req.body?.multiPv, 1, 1, env.maxMultiPv);
+    const position = normalizePositionRequest(
+      {
+        fen: parsedFen.fen,
+        depth: req.body?.depth,
+        nodes: req.body?.nodes,
+        movetime: req.body?.movetime,
+        multiPv: req.body?.multiPv,
+      },
+      0,
+    );
 
-    const result = await analysisQueue.enqueue(() => analyzeWithStockfish({
-      fen: parsedFen.fen,
-      turn: parsedFen.turn,
-      movetime,
-      multiPv,
-    }));
+    const result = await analysisQueue.enqueue(() => analyzeWithStockfish(position));
 
     return res.json(result);
   } catch (error) {
@@ -173,7 +208,6 @@ export async function analyzeStockfish(req, res, next) {
 export async function analyzeStockfishStream(req, res, next) {
   try {
     const positions = parseStreamPositions(req.body);
-
     await analysisQueue.enqueue(() => streamPositions(req, res, positions));
   } catch (error) {
     if (res.headersSent) {
@@ -182,6 +216,7 @@ export async function analyzeStockfishStream(req, res, next) {
         message: error.message || 'Erreur pendant le flux SSE.',
         status: error.status || 500,
       });
+
       res.end();
       return;
     }
