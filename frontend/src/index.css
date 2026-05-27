@@ -792,3 +792,42 @@ button {
     font-size: 0.62rem;
   }
 }
+
+.privacy-page {
+  width: min(880px, calc(100vw - 32px));
+  margin: 48px auto 80px;
+  padding: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: var(--radius-xl);
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
+.privacy-page h1 {
+  margin: 0 0 20px;
+  color: var(--title);
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+}
+
+.privacy-page h2 {
+  margin: 24px 0 8px;
+  color: var(--title);
+  font-size: 1rem;
+}
+
+.privacy-page p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.privacy-page a {
+  color: var(--primary);
+}
+
+.privacy-page hr {
+  margin: 36px 0;
+  border: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
