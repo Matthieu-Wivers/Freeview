@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
-import './Login.css';
-
 async function readJson(response) {
   const text = await response.text();
   if (!text) {
