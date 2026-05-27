@@ -1,15 +1,19 @@
 import { Outlet } from "react-router-dom";
+
 import Header from "./components/Header";
 import Footer from "./components/Footer";
-export default function MainLayout({}) {
-    return (
-        <div className="app-shell">
-            <Header />
+import "./style/layout.css";
 
-            <main className="app-frame">
-                <Outlet />
-            </main>
+export default function MainLayout({ isAuthenticated = false, user = null }) {
+  return (
+    <div className="app-shell">
+      <Header isAuthenticated={isAuthenticated} user={user} />
 
-            <Footer />
-        </div>);
+      <main className="app-frame">
+        <Outlet />
+      </main>
+
+      <Footer />
+    </div>
+  );
 }

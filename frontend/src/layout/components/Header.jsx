@@ -1,6 +1,51 @@
-export default function Header() {
-    return (
-        <header>
-            header
-        </header>);
+import { Link, NavLink } from "react-router-dom";
+
+const navLinks = [
+  { label: "Analyze", to: "/analyse" },
+  { label: "Share Hub", to: "/hub" },
+];
+
+export default function Header({ isAuthenticated = false, user = null }) {
+  const accountPath = isAuthenticated ? "/profile" : "/login";
+  const accountLabel = isAuthenticated ? "Profile" : "Sign in";
+  const accountInitial =
+    user?.name?.trim()?.charAt(0) || user?.email?.trim()?.charAt(0) || "♙";
+
+  return (
+    <header className="site-header">
+      <div className="site-header__inner">
+        <Link to="/analyse" className="site-header__brand" aria-label="Freeview">
+          <span className="site-header__logo">♞</span>
+          <span>
+            <strong>Freeview</strong>
+            <small>Chess analysis</small>
+          </span>
+        </Link>
+
+        <nav className="site-header__nav" aria-label="Main navigation">
+          {navLinks.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              className={({ isActive }) =>
+                isActive
+                  ? "site-header__nav-link is-active"
+                  : "site-header__nav-link"
+              }
+            >
+              {link.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <Link to={accountPath} className="site-header__account">
+          <span className="site-header__account-avatar">{accountInitial}</span>
+          <span className="site-header__account-text">
+            <small>Account</small>
+            <strong>{accountLabel}</strong>
+          </span>
+        </Link>
+      </div>
+    </header>
+  );
 }
