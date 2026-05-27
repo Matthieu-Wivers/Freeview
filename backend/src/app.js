@@ -6,7 +6,7 @@ import { apiRateLimiter } from './middlewares/rateLimit.middleware.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware.js';
 import healthRoutes from './routes/health.routes.js';
 import stockfishRoutes from './routes/stockfish.routes.js';
-import authRoutes from './routes/auth.routes.js'.
+import authRoutes from './routes/auth.routes.js';
 
 const app = express();
 
