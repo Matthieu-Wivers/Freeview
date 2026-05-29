@@ -38,7 +38,7 @@ export default function Profile() {
         avatarUrl,
       });
 
-      setMessage('Profil mis à jour.');
+      setMessage('Profile updated.');
     } catch (submitError) {
       setError(submitError.message);
     } finally {
@@ -59,9 +59,9 @@ export default function Profile() {
     <section className="login-page profile-page">
       <div className="login-card profile-card">
         <div className="login-header">
-          <p className="login-kicker">Mon profil</p>
+          <p className="login-kicker">My profile</p>
           <h1>{user.username}</h1>
-          <p>Consulte et modifie tes informations publiques.</p>
+          <p>View and update your public information.</p>
         </div>
 
         {message && <div className="login-alert success">{message}</div>}
@@ -77,7 +77,7 @@ export default function Profile() {
 
         <form className="login-form" onSubmit={submit}>
           <label>
-            Pseudo
+            Username
             <input
               type="text"
               minLength={3}
@@ -95,7 +95,7 @@ export default function Profile() {
               onChange={(event) => setBio(event.target.value)}
               maxLength={500}
               rows={5}
-              placeholder="Présente-toi en quelques mots"
+              placeholder="Tell other players a little about yourself"
             />
           </label>
 
@@ -115,12 +115,12 @@ export default function Profile() {
           </label>
 
           <label>
-            Email vérifié
-            <input type="text" value={user.emailVerified ? 'Oui' : 'Non'} disabled />
+            Email verified
+            <input type="text" value={user.emailVerified ? 'Yes' : 'No'} disabled />
           </label>
 
           <label>
-            Créé le
+            Created at
             <input
               type="text"
               value={user.createdAt ? new Date(user.createdAt).toLocaleString() : ''}
@@ -129,10 +129,10 @@ export default function Profile() {
           </label>
 
           <label>
-            Dernière connexion
+            Last login
             <input
               type="text"
-              value={user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Jamais'}
+              value={user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
               disabled
             />
           </label>
@@ -149,7 +149,7 @@ export default function Profile() {
           )}
 
           <button type="submit" className="login-primary-button" disabled={saving}>
-            {saving ? 'Enregistrement…' : 'Enregistrer'}
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
 
           <button
@@ -158,7 +158,7 @@ export default function Profile() {
             onClick={handleLogout}
             disabled={saving}
           >
-            Déconnexion
+            Log out
           </button>
         </form>
       </div>
