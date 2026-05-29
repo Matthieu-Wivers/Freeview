@@ -1,13 +1,13 @@
-import { Outlet } from "react-router-dom";
+import { Outlet } from 'react-router-dom';
 
-import Header from "./components/Header";
-import Footer from "./components/Footer";
-import "./style/layout.css";
+import Header from './components/Header';
+import Footer from './components/Footer';
+import './style/layout.css';
 
-export default function MainLayout({ isAuthenticated = false, user = null }) {
+export default function MainLayout() {
   return (
     <div className="app-shell">
-      <Header isAuthenticated={isAuthenticated} user={user} />
+      <Header />
 
       <main className="app-frame">
         <Outlet />
