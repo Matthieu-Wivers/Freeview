@@ -20,9 +20,11 @@ function toPublicUser(row) {
     email: row.email,
     emailVerified: row.email_verified,
     username: row.username,
+    bio: row.bio ?? '',
     avatarUrl: row.avatar_url,
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
+    ratings: Array.isArray(row.ratings) ? row.ratings : [],
   };
 }
 
@@ -79,12 +81,31 @@ async function insertDefaultRatings(client, userId) {
 
 export async function findUserById(userId) {
   const result = await pool.query(
-    `SELECT u.id, u.email, u.email_verified, u.created_at, u.last_login_at,
-            p.username, p.avatar_url
-       FROM users u
-       JOIN user_profiles p ON p.user_id = u.id
-      WHERE u.id = $1
-        AND u.disabled_at IS NULL`,
+    `SELECT
+      u.id,
+      u.email,
+      u.email_verified,
+      u.created_at,
+      u.last_login_at,
+      p.username,
+      p.bio,
+      p.avatar_url,
+      COALESCE(
+        json_agg(
+          json_build_object(
+            'type', r.rating_type,
+            'elo', r.elo
+          )
+          ORDER BY r.rating_type
+        ) FILTER (WHERE r.id IS NOT NULL),
+        '[]'::json
+      ) AS ratings
+    FROM users u
+    JOIN user_profiles p ON p.user_id = u.id
+    LEFT JOIN user_ratings r ON r.user_id = u.id
+    WHERE u.id = $1
+      AND u.disabled_at IS NULL
+    GROUP BY u.id, p.user_id`,
     [userId],
   );
 
@@ -243,4 +264,33 @@ export async function findOrCreateGoogleUser({ googleSub, email, emailVerified, 
 
     return userId;
   }).then(findUserById);
+}
+
+export async function updateUserProfileById(userId, { username, bio, avatarUrl }) {
+  const usernameNormalized = normalizeUsername(username);
+
+  const existing = await pool.query(
+    `SELECT 1
+    FROM user_profiles
+    WHERE username_normalized = $1
+      AND user_id <> $2
+    LIMIT 1`,
+    [usernameNormalized, userId],
+  );
+
+  if (existing.rowCount > 0) {
+    throw createHttpError(409, 'USERNAME_ALREADY_USED', 'This username is already taken.');
+  }
+
+  await pool.query(
+    `UPDATE user_profiles
+    SET username = $2,
+        username_normalized = $3,
+        bio = $4,
+        avatar_url = $5
+    WHERE user_id = $1`,
+    [userId, username, usernameNormalized, bio, avatarUrl],
+  );
+
+  return findUserById(userId);
 }

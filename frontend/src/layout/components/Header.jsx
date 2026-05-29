@@ -1,15 +1,19 @@
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink } from 'react-router-dom';
+
+import { useAuth } from '../../auth/AuthContext';
 
 const navLinks = [
-  { label: "Analyze", to: "/analyse" },
-  { label: "Share Hub", to: "/hub" },
+  { label: 'Analyze', to: '/analyse' },
+  { label: 'Share Hub', to: '/hub' },
 ];
 
-export default function Header({ isAuthenticated = false, user = null }) {
-  const accountPath = isAuthenticated ? "/profile" : "/login";
-  const accountLabel = isAuthenticated ? "Profile" : "Sign in";
-  const accountInitial =
-    user?.name?.trim()?.charAt(0) || user?.email?.trim()?.charAt(0) || "♙";
+export default function Header() {
+  const { user, isAuthenticated } = useAuth();
+
+  const displayName = user?.username || user?.email || 'Compte';
+  const accountPath = isAuthenticated ? '/profile' : '/login';
+  const accountLabel = isAuthenticated ? displayName : 'Login';
+  const accountInitial = displayName.trim().charAt(0).toUpperCase() || '♙';
 
   return (
     <header className="site-header">
@@ -28,9 +32,7 @@ export default function Header({ isAuthenticated = false, user = null }) {
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
-                isActive
-                  ? "site-header__nav-link is-active"
-                  : "site-header__nav-link"
+                isActive ? 'site-header__nav-link is-active' : 'site-header__nav-link'
               }
             >
               {link.label}
@@ -41,7 +43,7 @@ export default function Header({ isAuthenticated = false, user = null }) {
         <Link to={accountPath} className="site-header__account">
           <span className="site-header__account-avatar">{accountInitial}</span>
           <span className="site-header__account-text">
-            <small>Account</small>
+            <small>{isAuthenticated ? 'Profile' : 'Account'}</small>
             <strong>{accountLabel}</strong>
           </span>
         </Link>

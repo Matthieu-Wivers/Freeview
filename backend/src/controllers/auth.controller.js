@@ -5,6 +5,7 @@ import {
   loginWithEmailPassword,
   loginWithGoogleProfile,
   registerWithEmailPassword,
+  updateUserProfile,
 } from '../services/auth.service.js';
 
 function authCookieOptions() {
@@ -180,6 +181,15 @@ export async function googleCallback(req, res, next) {
 
     setAuthCookie(res, result.token);
     return res.redirect(env.frontendAuthSuccessUrl);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function updateProfile(req, res, next) {
+  try {
+    const user = await updateUserProfile(req.user.id, req.body ?? {});
+    return res.json({ user });
   } catch (error) {
     return next(error);
   }
