@@ -28,10 +28,10 @@ export default function Login() {
 
   const googleStatus = useMemo(() => {
     if (searchParams.get('google') === 'success') {
-      return 'Connexion Google réussie.';
+      return 'Google login successful.';
     }
     if (searchParams.get('error')) {
-      return 'La connexion Google a échoué.';
+      return 'Google login failed.';
     }
     return '';
   }, [searchParams]);
@@ -50,7 +50,7 @@ export default function Login() {
           setUser(payload.user);
         }
       } catch {
-        // Session absente ou API indisponible : on laisse le formulaire visible.
+        // No session or API unavailable: keep the form visible.
       }
     }
 
@@ -82,11 +82,11 @@ export default function Login() {
       const payload = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(payload?.message || 'Authentification impossible.');
+        throw new Error(payload?.message || 'Authentication failed.');
       }
 
       setUser(payload.user);
-      setMessage(isRegister ? 'Compte créé.' : 'Connexion réussie.');
+      setMessage(isRegister ? 'Account created.' : 'Login successful.');
       setPassword('');
     } catch (submitError) {
       setError(submitError.message);
@@ -106,9 +106,9 @@ export default function Login() {
         credentials: 'include',
       });
       setUser(null);
-      setMessage('Déconnexion réussie.');
+      setMessage('Logged out successfully.');
     } catch {
-      setError('Déconnexion impossible.');
+      setError('Logout failed.');
     } finally {
       setLoading(false);
     }
@@ -121,13 +121,13 @@ export default function Login() {
   return (
     <main className="login-page">
       <section className="login-card">
-        <Link className="login-back" to="/analyse">← Retour à l’analyse</Link>
+        <Link className="login-back" to="/analyse">← Back</Link>
 
         <div className="login-header">
           <p className="login-kicker">Freeview account</p>
-          <h1>{user ? 'Mon compte' : 'Connexion'}</h1>
+          <h1>{user ? 'My account' : 'Login'}</h1>
           <p>
-            Connecte-toi avec Google, ou avec un email et mot de passe pour ne pas dépendre d’un seul provider.
+            Sign in with Google, or use an email and password.
           </p>
         </div>
 
@@ -142,18 +142,23 @@ export default function Login() {
               <span>{user.email}</span>
             </div>
             <button type="button" className="login-secondary-button" onClick={logout} disabled={loading}>
-              Se déconnecter
+              Log out
             </button>
           </div>
         ) : (
           <>
             <button type="button" className="login-google-button" onClick={connectWithGoogle}>
-              Continuer avec Google
+              <img
+                src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Google_Favicon_2025.svg/960px-Google_Favicon_2025.svg.png"
+                className="google-logo"
+                alt="Google logo"
+              />
+              Login with Google
             </button>
 
-            <div className="login-separator"><span>ou</span></div>
+            <div className="login-separator"><span>or</span></div>
 
-            <div className="login-tabs" role="tablist" aria-label="Authentification email">
+            <div className="login-tabs" role="tablist" aria-label="Email authentication">
               <button
                 type="button"
                 className={mode === 'login' ? 'active' : ''}
@@ -173,14 +178,14 @@ export default function Login() {
             <form className="login-form" onSubmit={submit}>
               {isRegister && (
                 <label>
-                  Nom d’utilisateur
+                  Username
                   <input
                     type="text"
                     minLength={3}
                     maxLength={32}
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
-                    placeholder="MatthieuChess"
+                    placeholder="Username"
                   />
                 </label>
               )}
@@ -198,7 +203,7 @@ export default function Login() {
               </label>
 
               <label>
-                Mot de passe
+                Password
                 <input
                   type="password"
                   value={password}
@@ -206,12 +211,12 @@ export default function Login() {
                   autoComplete={isRegister ? 'new-password' : 'current-password'}
                   required
                   minLength={8}
-                  placeholder="8 caractères minimum"
+                  placeholder="8 characters minimum"
                 />
               </label>
 
               <button type="submit" className="login-primary-button" disabled={loading}>
-                {loading ? 'Chargement…' : isRegister ? 'Créer le compte' : 'Se connecter'}
+                {loading ? 'Loading…' : isRegister ? 'Create account' : 'Log in'}
               </button>
             </form>
           </>
