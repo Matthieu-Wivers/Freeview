@@ -1024,3 +1024,14 @@ button {
   color: #f8fafc;
   background: rgba(148, 163, 184, 0.2);
 }
+
+.login-google-button {
+  display: flex; 
+  align-items: center;
+  justify-content: center;
+  gap: 10px
+}
+
+.google-logo {
+  width: 25px;
+}
