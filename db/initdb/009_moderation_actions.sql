@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Freeview - Moderation actions
--- File: db/initdb/002_07_moderation_actions.sql
 --
 -- Purpose:
 -- - Keep an audit trail of admin moderation actions.

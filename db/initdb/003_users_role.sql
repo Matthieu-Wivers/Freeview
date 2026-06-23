@@ -1,10 +1,10 @@
 -- =====================================================================
--- Freeview - User roles
--- File: db/initdb/002_01_users_role.sql
+-- Freeview migration: add user roles
 --
 -- Purpose:
--- - Add USER / ADMIN authorization roles to the existing users table.
--- - Do not modify existing authentication columns or account behavior.
+-- - Fix existing databases created before the role column existed.
+-- - Keep Google login, email login, /api/auth/me and admin APIs compatible.
+-- - Safe to run multiple times.
 -- =====================================================================
 
 BEGIN;

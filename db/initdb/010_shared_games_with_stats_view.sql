@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Freeview - Shared games stats view
--- File: db/initdb/002_08_shared_games_with_stats_view.sql
 --
 -- Purpose:
 -- - Provide a convenient read model for the community feed.

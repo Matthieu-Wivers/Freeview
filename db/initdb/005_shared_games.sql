@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Freeview - Shared games
--- File: db/initdb/002_03_shared_games.sql
 --
 -- Purpose:
 -- - Publish saved games with a title, description and visibility.

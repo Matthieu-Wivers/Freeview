@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Freeview - Games
--- File: db/initdb/002_02_games.sql
 --
 -- Purpose:
 -- - Store chess games imported or created by authenticated users.

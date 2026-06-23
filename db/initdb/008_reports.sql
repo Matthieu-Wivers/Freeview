@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Freeview - Reports
--- File: db/initdb/002_06_reports.sql
 --
 -- Purpose:
 -- - Let users report shared games or comments.
