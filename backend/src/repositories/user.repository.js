@@ -19,6 +19,7 @@ function toPublicUser(row) {
     id: row.id,
     email: row.email,
     emailVerified: row.email_verified,
+    role: row.role ?? 'USER',
     username: row.username,
     bio: row.bio ?? '',
     avatarUrl: row.avatar_url,
@@ -73,39 +74,44 @@ async function findAvailableUsername(client, requestedUsername, email) {
 }
 
 async function insertDefaultRatings(client, userId) {
-  await Promise.all(DEFAULT_RATINGS.map((ratingType) => client.query(
-    'INSERT INTO user_ratings (user_id, rating_type) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-    [userId, ratingType],
-  )));
+  await Promise.all(
+    DEFAULT_RATINGS.map((ratingType) =>
+      client.query(
+        'INSERT INTO user_ratings (user_id, rating_type) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        [userId, ratingType],
+      ),
+    ),
+  );
 }
 
 export async function findUserById(userId) {
   const result = await pool.query(
     `SELECT
-      u.id,
-      u.email,
-      u.email_verified,
-      u.created_at,
-      u.last_login_at,
-      p.username,
-      p.bio,
-      p.avatar_url,
-      COALESCE(
-        json_agg(
-          json_build_object(
-            'type', r.rating_type,
-            'elo', r.elo
-          )
-          ORDER BY r.rating_type
-        ) FILTER (WHERE r.id IS NOT NULL),
-        '[]'::json
-      ) AS ratings
-    FROM users u
-    JOIN user_profiles p ON p.user_id = u.id
-    LEFT JOIN user_ratings r ON r.user_id = u.id
-    WHERE u.id = $1
-      AND u.disabled_at IS NULL
-    GROUP BY u.id, p.user_id`,
+       u.id,
+       u.email,
+       u.email_verified,
+       u.role,
+       u.created_at,
+       u.last_login_at,
+       p.username,
+       p.bio,
+       p.avatar_url,
+       COALESCE(
+         json_agg(
+           json_build_object(
+             'type', r.rating_type,
+             'elo', r.elo
+           )
+           ORDER BY r.rating_type
+         ) FILTER (WHERE r.id IS NOT NULL),
+         '[]'::json
+       ) AS ratings
+     FROM users u
+     JOIN user_profiles p ON p.user_id = u.id
+     LEFT JOIN user_ratings r ON r.user_id = u.id
+     WHERE u.id = $1
+       AND u.disabled_at IS NULL
+     GROUP BY u.id, p.user_id`,
     [userId],
   );
 
@@ -114,19 +120,27 @@ export async function findUserById(userId) {
 
 export async function findEmailAuthAccount(email) {
   const result = await pool.query(
-    `SELECT u.id, u.email, u.email_verified, u.created_at, u.last_login_at,
-            p.username, p.avatar_url,
-            a.password_hash
-       FROM users u
-       JOIN auth_accounts a ON a.user_id = u.id
-       JOIN user_profiles p ON p.user_id = u.id
-      WHERE u.email_normalized = $1
-        AND a.provider = 'email'
-        AND u.disabled_at IS NULL`,
+    `SELECT
+       u.id,
+       u.email,
+       u.email_verified,
+       u.role,
+       u.created_at,
+       u.last_login_at,
+       p.username,
+       p.avatar_url,
+       a.password_hash
+     FROM users u
+     JOIN auth_accounts a ON a.user_id = u.id
+     JOIN user_profiles p ON p.user_id = u.id
+     WHERE u.email_normalized = $1
+       AND a.provider = 'email'
+       AND u.disabled_at IS NULL`,
     [normalizeEmail(email)],
   );
 
   const row = result.rows[0];
+
   if (!row) {
     return null;
   }
@@ -195,29 +209,32 @@ export async function findOrCreateGoogleUser({ googleSub, email, emailVerified, 
   return withTransaction(async (client) => {
     const existingGoogle = await client.query(
       `SELECT u.id
-         FROM users u
-         JOIN auth_accounts a ON a.user_id = u.id
-        WHERE a.provider = 'google'
-          AND a.provider_user_id = $1
-          AND u.disabled_at IS NULL`,
+       FROM users u
+       JOIN auth_accounts a ON a.user_id = u.id
+       WHERE a.provider = 'google'
+         AND a.provider_user_id = $1
+         AND u.disabled_at IS NULL`,
       [googleSub],
     );
 
     if (existingGoogle.rows[0]?.id) {
       const userId = existingGoogle.rows[0].id;
+
       await client.query(
         `UPDATE users
-            SET email_verified = users.email_verified OR $2,
-                last_login_at = now()
-          WHERE id = $1`,
+         SET email_verified = users.email_verified OR $2,
+             last_login_at = now()
+         WHERE id = $1`,
         [userId, Boolean(emailVerified)],
       );
+
       if (avatarUrl) {
         await client.query(
           'UPDATE user_profiles SET avatar_url = COALESCE(avatar_url, $2) WHERE user_id = $1',
           [userId, avatarUrl],
         );
       }
+
       return userId;
     }
 
@@ -249,9 +266,9 @@ export async function findOrCreateGoogleUser({ googleSub, email, emailVerified, 
     } else {
       await client.query(
         `UPDATE users
-            SET email_verified = users.email_verified OR $2,
-                last_login_at = now()
-          WHERE id = $1`,
+         SET email_verified = users.email_verified OR $2,
+             last_login_at = now()
+         WHERE id = $1`,
         [userId, Boolean(emailVerified)],
       );
     }
@@ -271,10 +288,10 @@ export async function updateUserProfileById(userId, { username, bio, avatarUrl }
 
   const existing = await pool.query(
     `SELECT 1
-    FROM user_profiles
-    WHERE username_normalized = $1
-      AND user_id <> $2
-    LIMIT 1`,
+     FROM user_profiles
+     WHERE username_normalized = $1
+       AND user_id <> $2
+     LIMIT 1`,
     [usernameNormalized, userId],
   );
 
@@ -284,11 +301,11 @@ export async function updateUserProfileById(userId, { username, bio, avatarUrl }
 
   await pool.query(
     `UPDATE user_profiles
-    SET username = $2,
-        username_normalized = $3,
-        bio = $4,
-        avatar_url = $5
-    WHERE user_id = $1`,
+     SET username = $2,
+         username_normalized = $3,
+         bio = $4,
+         avatar_url = $5
+     WHERE user_id = $1`,
     [userId, username, usernameNormalized, bio, avatarUrl],
   );
 
