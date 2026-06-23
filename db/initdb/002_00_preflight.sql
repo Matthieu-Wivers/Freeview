@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Freeview - Community schema migration
--- File: db/initdb/002_00_preflight.sql
 --
 -- Purpose:
 -- - Verify that the existing Freeview base schema is present.

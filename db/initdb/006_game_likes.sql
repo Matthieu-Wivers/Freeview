@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Freeview - Game likes
--- File: db/initdb/002_04_game_likes.sql
 --
 -- Purpose:
 -- - Store likes on shared games.

@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Freeview - Comments
--- File: db/initdb/002_05_comments.sql
 --
 -- Purpose:
 -- - Store comments on shared games.
