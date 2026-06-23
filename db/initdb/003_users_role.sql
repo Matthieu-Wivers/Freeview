@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Freeview migration: add user roles
--- File: db/initdb/002_01_users_role.sql
 --
 -- Purpose:
 -- - Fix existing databases created before the role column existed.
