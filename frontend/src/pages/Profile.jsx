@@ -1,167 +1,213 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
+import SharedGameCard from '../components/community/SharedGameCard';
+import { deleteGame, listMyGames, listSharedGames } from '../services/freeviewApi';
+import { formatDate, getGameId, getGameTitle, getUserDisplayName, summarizePgn } from '../utils/pgn';
 
 export default function Profile() {
-  const navigate = useNavigate();
-  const { user, updateProfile, logout } = useAuth();
-
-  const [username, setUsername] = useState('');
-  const [bio, setBio] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
+  const { user, logout, updateProfile } = useAuth();
+  const [profileForm, setProfileForm] = useState({
+    username: user?.username || '',
+    bio: user?.bio || user?.profile?.bio || '',
+    avatar_url: user?.avatar_url || user?.avatarUrl || user?.profile?.avatar_url || '',
+  });
+  const [games, setGames] = useState([]);
+  const [sharedGames, setSharedGames] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    setUsername(user.username || '');
-    setBio(user.bio || '');
-    setAvatarUrl(user.avatarUrl || '');
+    setProfileForm({
+      username: user?.username || '',
+      bio: user?.bio || user?.profile?.bio || '',
+      avatar_url: user?.avatar_url || user?.avatarUrl || user?.profile?.avatar_url || '',
+    });
   }, [user]);
 
-  async function submit(event) {
-    event.preventDefault();
-
-    setSaving(true);
-    setMessage('');
+  async function loadProfileData() {
+    setLoading(true);
     setError('');
 
     try {
-      await updateProfile({
-        username,
-        bio,
-        avatarUrl,
-      });
+      const [nextGames, nextSharedGames] = await Promise.all([
+        listMyGames().catch(() => []),
+        listSharedGames({ mine: true }).catch(() => []),
+      ]);
+      setGames(nextGames);
+      setSharedGames(nextSharedGames);
+    } catch (apiError) {
+      setError(apiError.message || 'Impossible de charger le profil.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      setMessage('Profile updated.');
-    } catch (submitError) {
-      setError(submitError.message);
+  useEffect(() => {
+    loadProfileData();
+  }, []);
+
+  const stats = useMemo(() => {
+    const publicGames = sharedGames.filter((game) => game.visibility === 'public').length;
+    const comments = sharedGames.reduce((total, game) => total + Number(game.comments_count || game.comment_count || 0), 0);
+    const likes = sharedGames.reduce((total, game) => total + Number(game.likes_count || game.like_count || 0), 0);
+
+    return { publicGames, comments, likes };
+  }, [sharedGames]);
+
+  async function handleProfileSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await updateProfile(profileForm);
+      setMessage('Profil mis à jour.');
+    } catch (apiError) {
+      setError(apiError.message || 'Impossible de mettre à jour le profil.');
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleLogout() {
-    await logout();
-    navigate('/login', { replace: true });
-  }
-
-  if (!user) {
-    return null;
+  async function handleDeleteGame(gameId) {
+    try {
+      await deleteGame(gameId);
+      setGames((items) => items.filter((game) => String(getGameId(game)) !== String(gameId)));
+    } catch (apiError) {
+      setError(apiError.message || 'Impossible de supprimer cette partie.');
+    }
   }
 
   return (
-    <section className="login-page profile-page">
-      <div className="login-card profile-card">
-        <div className="login-header">
-          <p className="login-kicker">My profile</p>
-          <h1>{user.username}</h1>
-          <p>View and update your public information.</p>
-        </div>
-
-        {message && <div className="login-alert success">{message}</div>}
-        {error && <div className="login-alert error">{error}</div>}
-
-        <div className="login-session">
-          {user.avatarUrl && <img src={user.avatarUrl} alt="Avatar" className="login-avatar" />}
+    <div className="community-page profile-page">
+      <section className="panel profile-hero">
+        <div className="profile-hero__identity">
+          <div className="profile-avatar">
+            {profileForm.avatar_url ? <img src={profileForm.avatar_url} alt="Avatar" /> : <span>{getUserDisplayName(user).charAt(0).toUpperCase()}</span>}
+          </div>
           <div>
-            <strong>{user.username}</strong>
-            <span>{user.email}</span>
+            <p className="eyebrow">Profil</p>
+            <h1>{getUserDisplayName(user)}</h1>
+            <p className="subtle">{user?.email}</p>
+            <span className="review-badge review-badge--good">{user?.role || 'USER'}</span>
           </div>
         </div>
+        <div className="profile-stats">
+          <span><strong>{games.length}</strong> parties</span>
+          <span><strong>{sharedGames.length}</strong> publications</span>
+          <span><strong>{stats.likes}</strong> likes</span>
+          <span><strong>{stats.comments}</strong> commentaires</span>
+        </div>
+      </section>
 
-        <form className="login-form" onSubmit={submit}>
-          <label>
-            Username
+      {(message || error) && (
+        <p className={error ? 'panel community-state error-text' : 'panel community-state'}>{error || message}</p>
+      )}
+
+      <section className="profile-grid">
+        <form className="panel profile-card" onSubmit={handleProfileSubmit}>
+          <div className="section-title-row">
+            <div>
+              <p className="eyebrow">Informations</p>
+              <h2>Modifier mon profil</h2>
+            </div>
+          </div>
+          <label className="form-field">
+            <span>Nom d'utilisateur</span>
             <input
-              type="text"
-              minLength={3}
-              maxLength={32}
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              required
+              value={profileForm.username}
+              onChange={(event) => setProfileForm((current) => ({ ...current, username: event.target.value }))}
+              maxLength={60}
             />
           </label>
-
-          <label>
-            Bio
+          <label className="form-field">
+            <span>Bio</span>
             <textarea
-              value={bio}
-              onChange={(event) => setBio(event.target.value)}
-              maxLength={500}
+              value={profileForm.bio}
+              onChange={(event) => setProfileForm((current) => ({ ...current, bio: event.target.value }))}
               rows={5}
-              placeholder="Tell other players a little about yourself"
+              placeholder="Présente rapidement ton niveau, ton style ou ce que tu veux travailler."
             />
           </label>
-
-          <label>
-            Avatar URL
+          <label className="form-field">
+            <span>URL avatar</span>
             <input
-              type="url"
-              value={avatarUrl}
-              onChange={(event) => setAvatarUrl(event.target.value)}
+              value={profileForm.avatar_url}
+              onChange={(event) => setProfileForm((current) => ({ ...current, avatar_url: event.target.value }))}
               placeholder="https://..."
             />
           </label>
-
-          <label>
-            Email
-            <input type="email" value={user.email || ''} disabled />
-          </label>
-
-          <label>
-            Email verified
-            <input type="text" value={user.emailVerified ? 'Yes' : 'No'} disabled />
-          </label>
-
-          <label>
-            Created at
-            <input
-              type="text"
-              value={user.createdAt ? new Date(user.createdAt).toLocaleString() : ''}
-              disabled
-            />
-          </label>
-
-          <label>
-            Last login
-            <input
-              type="text"
-              value={user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
-              disabled
-            />
-          </label>
-
-          {Array.isArray(user.ratings) && user.ratings.length > 0 && (
-            <div className="profile-ratings">
-              <strong>Ratings</strong>
-              {user.ratings.map((rating) => (
-                <span key={rating.type}>
-                  {rating.type}: {rating.elo}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <button type="submit" className="login-primary-button" disabled={saving}>
-            {saving ? 'Saving…' : 'Save changes'}
-          </button>
-
-          <button
-            type="button"
-            className="login-secondary-button"
-            onClick={handleLogout}
-            disabled={saving}
-          >
-            Log out
-          </button>
+          <div className="input-actions">
+            <button className="btn btn--primary" type="submit" disabled={saving}>{saving ? 'Enregistrement...' : 'Enregistrer'}</button>
+            <button className="btn btn--secondary" type="button" onClick={logout}>Déconnexion</button>
+          </div>
         </form>
-      </div>
-    </section>
+
+        <aside className="panel profile-card">
+          <p className="eyebrow">Actions rapides</p>
+          <h2>Continuer le projet</h2>
+          <div className="profile-action-list">
+            <Link className="btn btn--primary" to="/games/import">Importer une partie</Link>
+            <Link className="btn btn--secondary" to="/community">Voir la communauté</Link>
+            <Link className="btn btn--secondary" to="/analyse">Analyser un PGN</Link>
+          </div>
+        </aside>
+      </section>
+
+      <section className="profile-sections">
+        <article className="panel profile-card">
+          <div className="section-title-row">
+            <div>
+              <p className="eyebrow">Mes parties</p>
+              <h2>Parties importées</h2>
+            </div>
+            <Link className="btn btn--secondary" to="/games/import">Ajouter</Link>
+          </div>
+
+          {loading && <p className="subtle">Chargement...</p>}
+          {!loading && games.length === 0 && <p className="inline-note">Aucune partie importée pour le moment.</p>}
+
+          <div className="profile-game-list">
+            {games.map((game) => {
+              const gameId = getGameId(game);
+              const summary = summarizePgn(game.pgn || '');
+              return (
+                <div className="profile-game-row" key={gameId}>
+                  <div>
+                    <strong>{getGameTitle(game)}</strong>
+                    <span>{summary.moveCount} coups · {formatDate(game.created_at || game.createdAt || summary.date)}</span>
+                  </div>
+                  <div className="input-actions">
+                    <Link className="btn btn--secondary" to={`/games/${gameId}/share`}>Partager</Link>
+                    <button className="btn btn--ghost" type="button" onClick={() => handleDeleteGame(gameId)}>Supprimer</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </article>
+
+        <article className="panel profile-card">
+          <div className="section-title-row">
+            <div>
+              <p className="eyebrow">Publications</p>
+              <h2>Mes parties partagées</h2>
+            </div>
+          </div>
+
+          {!loading && sharedGames.length === 0 && <p className="inline-note">Aucune publication pour le moment.</p>}
+          <div className="shared-game-list shared-game-list--compact">
+            {sharedGames.map((sharedGame) => (
+              <SharedGameCard key={sharedGame.id || sharedGame.shared_game_id} sharedGame={sharedGame} />
+            ))}
+          </div>
+        </article>
+      </section>
+    </div>
   );
 }

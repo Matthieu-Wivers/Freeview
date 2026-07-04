@@ -1,38 +1,56 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
+import { apiRequest } from '../services/apiClient';
+
 const AuthContext = createContext(null);
 
-async function readJson(response) {
-  const text = await response.text();
-
-  if (!text) {
+function extractUser(payload) {
+  if (!payload) {
     return null;
   }
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
+  if (payload.user) {
+    return payload.user;
   }
+
+  if (payload.data?.user) {
+    return payload.data.user;
+  }
+
+  if (payload.id || payload.email || payload.username || payload.role) {
+    return payload;
+  }
+
+  return null;
 }
 
-async function apiRequest(path, options = {}) {
-  const response = await fetch(path, {
-    credentials: 'include',
-    headers: {
-      'content-type': 'application/json',
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
+function checkIsAdmin(user) {
+  return String(user?.role || '').toUpperCase() === 'ADMIN';
+}
 
-  const payload = await readJson(response);
+function getGoogleSsoUrl() {
+  const explicitGoogleUrl = import.meta.env.VITE_GOOGLE_SSO_URL;
 
-  if (!response.ok) {
-    throw new Error(payload?.message || 'Une erreur est survenue.');
+  if (explicitGoogleUrl) {
+    return explicitGoogleUrl;
   }
 
-  return payload;
+  const rawApiBase =
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    '';
+
+  if (!rawApiBase) {
+    return '/api/auth/google';
+  }
+
+  const base = String(rawApiBase).replace(/\/+$/, '');
+
+  if (base.endsWith('/api')) {
+    return `${base}/auth/google`;
+  }
+
+  return `${base}/api/auth/google`;
 }
 
 export function AuthProvider({ children }) {
@@ -41,18 +59,11 @@ export function AuthProvider({ children }) {
 
   async function refreshUser() {
     try {
-      const response = await fetch('/api/auth/me', {
-        credentials: 'include',
-      });
+      const payload = await apiRequest('/auth/me');
+      const nextUser = extractUser(payload);
 
-      if (!response.ok) {
-        setUser(null);
-        return null;
-      }
-
-      const payload = await response.json();
-      setUser(payload.user);
-      return payload.user;
+      setUser(nextUser);
+      return nextUser;
     } catch {
       setUser(null);
       return null;
@@ -66,51 +77,64 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function login({ email, password }) {
-    const payload = await apiRequest('/api/auth/login', {
+    const payload = await apiRequest('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: { email, password },
     });
 
-    setUser(payload.user);
-    return payload.user;
+    const nextUser = extractUser(payload);
+    setUser(nextUser);
+
+    return nextUser;
   }
 
-  async function register({ email, password, username }) {
-    const payload = await apiRequest('/api/auth/register', {
+  async function register({ username, email, password }) {
+    const payload = await apiRequest('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, username }),
+      body: { username, email, password },
     });
 
-    setUser(payload.user);
-    return payload.user;
+    const nextUser = extractUser(payload);
+    setUser(nextUser);
+
+    return nextUser;
+  }
+
+  function loginWithGoogle() {
+    window.location.href = getGoogleSsoUrl();
   }
 
   async function updateProfile(values) {
-    const payload = await apiRequest('/api/auth/me', {
+    const payload = await apiRequest('/auth/me', {
       method: 'PATCH',
-      body: JSON.stringify(values),
+      body: values,
     });
 
-    setUser(payload.user);
-    return payload.user;
+    const nextUser = extractUser(payload);
+    setUser(nextUser);
+
+    return nextUser;
   }
 
   async function logout() {
-    await fetch('/api/auth/logout', {
-      method: 'POST',
-      credentials: 'include',
-    });
-
-    setUser(null);
+    try {
+      await apiRequest('/auth/logout', {
+        method: 'POST',
+      });
+    } finally {
+      setUser(null);
+    }
   }
 
   const value = useMemo(
     () => ({
       user,
-      isAuthenticated: Boolean(user),
       authLoading,
+      isAuthenticated: Boolean(user),
+      isAdmin: checkIsAdmin(user),
       login,
       register,
+      loginWithGoogle,
       logout,
       updateProfile,
       refreshUser,
@@ -125,7 +149,7 @@ export function useAuth() {
   const value = useContext(AuthContext);
 
   if (!value) {
-    throw new Error('useAuth doit être utilisé dans AuthProvider.');
+    throw new Error('useAuth doit être utilisé dans un AuthProvider.');
   }
 
   return value;

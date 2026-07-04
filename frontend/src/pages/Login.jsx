@@ -1,91 +1,111 @@
-import { useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 
 export default function Login() {
+  const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const { login, register } = useAuth();
 
-  const [mode, setMode] = useState('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [username, setUsername] = useState('');
+  const {
+    login,
+    register,
+    loginWithGoogle,
+    isAuthenticated,
+    authLoading,
+  } = useAuth();
+
+  const [mode, setMode] = useState(
+    location.pathname === '/register' ? 'register' : 'login',
+  );
+
+  const [form, setForm] = useState({
+    username: '',
+    email: '',
+    password: '',
+  });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const isRegister = mode === 'register';
+  useEffect(() => {
+    setMode(location.pathname === '/register' ? 'register' : 'login');
+    setError('');
+  }, [location.pathname]);
 
-  const googleStatus = useMemo(() => {
-    if (searchParams.get('error')) {
-      return 'Google login failed.';
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      navigate('/profile', { replace: true });
     }
+  }, [authLoading, isAuthenticated, navigate]);
 
-    return '';
-  }, [searchParams]);
+  function updateField(field, value) {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
 
-  async function submit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     setLoading(true);
     setError('');
 
     try {
-      if (isRegister) {
-        await register({ email, password, username });
+      if (mode === 'register') {
+        await register({
+          username: form.username,
+          email: form.email,
+          password: form.password,
+        });
       } else {
-        await login({ email, password });
+        await login({
+          email: form.email,
+          password: form.password,
+        });
       }
 
-      navigate('/', { replace: true });
-    } catch (submitError) {
-      setError(submitError.message);
+      navigate('/profile', { replace: true });
+    } catch (apiError) {
+      setError(apiError?.message || 'Connexion impossible.');
     } finally {
       setLoading(false);
     }
   }
 
-  function connectWithGoogle() {
-    window.location.href = '/api/auth/google';
+  function handleGoogleLogin() {
+    setError('');
+    loginWithGoogle();
   }
 
   return (
-    <main className="login-page">
+    <div className="login-page">
       <section className="login-card">
-        <Link className="login-back" to="/analyse">
-          ← Back
+        <Link className="login-back" to="/">
+          ← Retour à Freeview
         </Link>
 
         <div className="login-header">
-          <p className="login-kicker">Freeview account</p>
-          <h1>{isRegister ? 'Create account' : 'Login'}</h1>
-          <p>Sign in with Google, or use an email and password.</p>
+          <p className="login-kicker">Compte Freeview</p>
+
+          <h1>
+            {mode === 'register' ? 'Créer un compte' : 'Connexion'}
+          </h1>
+
+          <p>
+            Connecte-toi pour importer, publier, liker et commenter des parties
+            d&apos;échecs.
+          </p>
         </div>
 
-        {googleStatus && <div className="login-alert error">{googleStatus}</div>}
-        {error && <div className="login-alert error">{error}</div>}
-
-        <button type="button" className="login-google-button" onClick={connectWithGoogle}>
-          <img
-            src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Google_Favicon_2025.svg/960px-Google_Favicon_2025.svg.png"
-            className="google-logo"
-            alt="Google logo"
-          />
-          Login with Google
-        </button>
-
-        <div className="login-separator">
-          <span>or</span>
-        </div>
-
-        <div className="login-tabs" role="tablist" aria-label="Email authentication">
+        <div className="login-tabs">
           <button
             type="button"
             className={mode === 'login' ? 'active' : ''}
             onClick={() => setMode('login')}
           >
-            Login
+            Connexion
           </button>
 
           <button
@@ -93,22 +113,46 @@ export default function Login() {
             className={mode === 'register' ? 'active' : ''}
             onClick={() => setMode('register')}
           >
-            Register
+            Inscription
           </button>
         </div>
 
-        <form className="login-form" onSubmit={submit}>
-          {isRegister && (
+        {error && (
+          <p className="login-alert error">
+            {error}
+          </p>
+        )}
+
+        {mode === 'login' && (
+          <>
+            <button
+              type="button"
+              className="login-google-button"
+              onClick={handleGoogleLogin}
+              disabled={loading}
+            >
+              Continuer avec Google
+            </button>
+
+            <div className="login-separator">
+              <span />
+              <p>ou</p>
+              <span />
+            </div>
+          </>
+        )}
+
+        <form className="login-form" onSubmit={handleSubmit}>
+          {mode === 'register' && (
             <label>
-              Username
+              Nom d&apos;utilisateur
               <input
                 type="text"
-                minLength={3}
-                maxLength={32}
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="Username"
+                value={form.username}
+                onChange={(event) => updateField('username', event.target.value)}
                 required
+                autoComplete="username"
+                placeholder="Wivers"
               />
             </label>
           )}
@@ -117,32 +161,39 @@ export default function Login() {
             Email
             <input
               type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
+              value={form.email}
+              onChange={(event) => updateField('email', event.target.value)}
               required
-              placeholder="player@example.com"
+              autoComplete="email"
+              placeholder="exemple@mail.com"
             />
           </label>
 
           <label>
-            Password
+            Mot de passe
             <input
               type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete={isRegister ? 'new-password' : 'current-password'}
+              value={form.password}
+              onChange={(event) => updateField('password', event.target.value)}
               required
-              minLength={8}
-              placeholder="8 characters minimum"
+              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+              placeholder="••••••••"
             />
           </label>
 
-          <button type="submit" className="login-primary-button" disabled={loading}>
-            {loading ? 'Loading…' : isRegister ? 'Create account' : 'Log in'}
+          <button
+            type="submit"
+            className="login-primary-button"
+            disabled={loading}
+          >
+            {loading
+              ? 'Chargement...'
+              : mode === 'register'
+                ? 'Créer mon compte'
+                : 'Se connecter'}
           </button>
         </form>
       </section>
-    </main>
+    </div>
   );
 }
