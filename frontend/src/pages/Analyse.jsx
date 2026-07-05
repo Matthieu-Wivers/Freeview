@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
+import { useAuth } from '../auth/AuthContext';
 import { AccuracySummary } from '../components/Analyse/AccuracySummary';
 import { ChessBoardPanel } from '../components/Analyse/ChessBoardPanel';
 import { EvalChart } from '../components/Analyse/EvalChart';
 import { GameHeader } from '../components/Analyse/GameHeader';
 import { MovesSidebar } from '../components/Analyse/MovesSidebar';
 import { PgnInputPanel } from '../components/Analyse/PgnInputPanel';
-import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
-
 import { samplePgn } from '../data/samplePgn';
-
+import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
+import { createSharedGame, importGame } from '../services/freeviewApi';
+import { createChessFromFen, getFenAtPly } from '../utils/chess';
+import { parsePgn } from '../utils/pgn';
+import {
+  buildReviewDescription,
+  buildReviewSummary,
+  buildReviewTitle,
+} from '../utils/sharedReview';
 import {
   analyzeGameWithStockfish,
   analyzeSandboxMoveWithStockfish,
 } from '../utils/stockfishAnalysis';
-
-import { createChessFromFen, getFenAtPly } from '../utils/chess';
-import { parsePgn } from '../utils/pgn';
 
 const QUERY_PGN_KEYS = ['pgn', 'PGN', 'game', 'Game'];
 
@@ -51,20 +55,35 @@ function extractPgnFromSearch(search) {
   return safeDecodeQueryValue(rawSearch).trim();
 }
 
+function getGamePgn(game, pgnInput) {
+  return game?.normalizedPgn || pgnInput.trim();
+}
+
 export default function Analyse() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   const [pgnInput, setPgnInput] = useState('');
   const [game, setGame] = useState(null);
   const [review, setReview] = useState(null);
+
   const [currentPly, setCurrentPly] = useState(0);
   const [boardOrientation, setBoardOrientation] = useState('white');
   const [showBestMove, setShowBestMove] = useState(true);
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+
   const [sandboxFen, setSandboxFen] = useState(null);
   const [sandboxFeedback, setSandboxFeedback] = useState(null);
   const [visiblePgnArea, setVisiblePgnArea] = useState(false);
+
+  const [shareTitle, setShareTitle] = useState('');
+  const [shareDescription, setShareDescription] = useState('');
+  const [shareVisibility, setShareVisibility] = useState('public');
+  const [shareError, setShareError] = useState(null);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   const autoAnalyzedPgnRef = useRef(null);
 
@@ -81,6 +100,7 @@ export default function Analyse() {
   const runAnalysis = useCallback(async (rawPgn) => {
     setIsLoading(true);
     setError(null);
+    setShareError(null);
 
     try {
       const parsed = parsePgn(rawPgn);
@@ -91,11 +111,12 @@ export default function Analyse() {
       setCurrentPly(0);
       setSandboxFen(null);
       setSandboxFeedback(null);
+      setVisiblePgnArea(false);
     } catch (analysisError) {
       setError(
         analysisError instanceof Error
           ? analysisError.message
-          : 'Une erreur inconnue est survenue pendant l’analyse.'
+          : 'An unknown error happened during analysis.',
       );
     } finally {
       setIsLoading(false);
@@ -119,6 +140,16 @@ export default function Analyse() {
     setVisiblePgnArea(false);
     void runAnalysis(urlPgn);
   }, [location.search, runAnalysis]);
+
+  useEffect(() => {
+    if (!game || !review) {
+      return;
+    }
+
+    setShareTitle(buildReviewTitle(game));
+    setShareDescription(buildReviewDescription(game, review));
+    setShareVisibility('public');
+  }, [game, review]);
 
   const maxPly = game?.moves.length ?? 0;
 
@@ -148,7 +179,7 @@ export default function Analyse() {
       setCurrentPly(ply);
       clearSandbox();
     },
-    [clearSandbox]
+    [clearSandbox],
   );
 
   const resetSandbox = useCallback(() => {
@@ -172,7 +203,9 @@ export default function Analyse() {
           promotion: 'q',
         });
 
-        if (!move) return false;
+        if (!move) {
+          return false;
+        }
 
         const nextFen = chess.fen();
         const uci = `${move.from}${move.to}${move.promotion ?? ''}`;
@@ -191,15 +224,77 @@ export default function Analyse() {
         return false;
       }
     },
-    [boardFen]
+    [boardFen],
   );
 
   const loadSample = () => {
     setPgnInput(samplePgn);
   };
 
-  const loadPgnInput = () => {
-    setVisiblePgnArea(!visiblePgnArea);
+  const togglePgnInput = () => {
+    setVisiblePgnArea((value) => !value);
+  };
+
+  const publishReview = async (event) => {
+    event.preventDefault();
+
+    if (!game || !review) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      navigate('/login', {
+        state: {
+          from: `${location.pathname}${location.search}`,
+        },
+      });
+      return;
+    }
+
+    const pgn = getGamePgn(game, pgnInput);
+
+    if (!pgn) {
+      setShareError('The PGN is missing.');
+      return;
+    }
+
+    setIsPublishing(true);
+    setShareError(null);
+
+    try {
+      const savedGame = await importGame({
+        pgn,
+        whitePlayer: game.headers.White ?? null,
+        blackPlayer: game.headers.Black ?? null,
+        result: game.headers.Result ?? null,
+        source: 'pgn_import',
+      });
+
+      const analysisSummary = buildReviewSummary(game, review);
+
+      const sharedGame = await createSharedGame({
+        gameId: savedGame.id,
+        game_id: savedGame.id,
+        title: shareTitle.trim(),
+        description: shareDescription.trim(),
+        visibility: shareVisibility,
+        review,
+        analysisSummary,
+        analysis_summary: analysisSummary,
+        reviewedAt: new Date().toISOString(),
+        reviewed_at: new Date().toISOString(),
+      });
+
+      navigate(`/shared-games/${sharedGame.id}`);
+    } catch (publishError) {
+      setShareError(
+        publishError instanceof Error
+          ? publishError.message
+          : 'The review could not be published.',
+      );
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   return (
@@ -207,7 +302,7 @@ export default function Analyse() {
       <div className="app-backdrop" />
 
       <main className="app-content">
-        {!game || !review ? (
+        {(!game || !review || visiblePgnArea) ? (
           <PgnInputPanel
             value={pgnInput}
             onChange={setPgnInput}
@@ -220,19 +315,82 @@ export default function Analyse() {
             error={error}
           />
         ) : (
-          <button className="btn btn--primary" onClick={loadPgnInput}>
-            show pgn area
-          </button>
+          <div className="analysis-actions">
+            <button className="btn btn--primary" type="button" onClick={togglePgnInput}>
+              Show PGN input
+            </button>
+
+            <button className="btn btn--ghost" type="button" onClick={() => navigate('/community')}>
+              Open Review Hub
+            </button>
+          </div>
         )}
 
         {game && review ? (
           <>
+            <section className="review-share-panel">
+              <div>
+                <p className="eyebrow">Ready to share</p>
+                <h2>Publish this analyzed review</h2>
+                <p>
+                  This will save the PGN, the Stockfish review, the accuracy summary,
+                  and the critical move list so other users can view the analyzed game.
+                </p>
+              </div>
+
+              <form className="review-share-form" onSubmit={publishReview}>
+                <label className="form-field">
+                  Title
+                  <input
+                    type="text"
+                    value={shareTitle}
+                    onChange={(event) => setShareTitle(event.target.value)}
+                    minLength={3}
+                    maxLength={120}
+                    required
+                  />
+                </label>
+
+                <label className="form-field">
+                  Description
+                  <textarea
+                    value={shareDescription}
+                    onChange={(event) => setShareDescription(event.target.value)}
+                    maxLength={4000}
+                    rows={5}
+                  />
+                </label>
+
+                <label className="form-field">
+                  Visibility
+                  <select
+                    value={shareVisibility}
+                    onChange={(event) => setShareVisibility(event.target.value)}
+                  >
+                    <option value="public">Public</option>
+                    <option value="unlisted">Unlisted</option>
+                    <option value="private">Private</option>
+                  </select>
+                </label>
+
+                {shareError ? <p className="error-text">{shareError}</p> : null}
+
+                <button
+                  className="btn btn--primary"
+                  type="submit"
+                  disabled={isPublishing || shareTitle.trim().length < 3}
+                >
+                  {isPublishing ? 'Publishing review...' : 'Publish review'}
+                </button>
+              </form>
+            </section>
+
             <div className="top-grid">
               <GameHeader headers={game.headers} />
 
               <AccuracySummary
-                whiteName={game.headers.White ?? 'Blancs'}
-                blackName={game.headers.Black ?? 'Noirs'}
+                whiteName={game.headers.White ?? 'White'}
+                blackName={game.headers.Black ?? 'Black'}
                 accuracyWhite={review.accuracyWhite}
                 accuracyBlack={review.accuracyBlack}
               />
@@ -252,13 +410,11 @@ export default function Analyse() {
                 boardOrientation={boardOrientation}
                 onPieceDrop={handlePieceDrop}
                 onFlip={() =>
-                  setBoardOrientation((value) =>
-                    value === 'white' ? 'black' : 'white'
-                  )
+                  setBoardOrientation((value) => (value === 'white' ? 'black' : 'white'))
                 }
                 onPrev={goPrev}
                 onNext={goNext}
-                showBestMove={!showBestMove}
+                showBestMove={showBestMove}
                 onToggleBestMove={() => setShowBestMove((value) => !value)}
                 sandboxFeedback={sandboxFeedback}
                 isSandboxActive={Boolean(sandboxFen)}
