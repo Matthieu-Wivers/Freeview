@@ -7,6 +7,12 @@ import { errorHandler, notFoundHandler } from './middlewares/error.middleware.js
 import healthRoutes from './routes/health.routes.js';
 import stockfishRoutes from './routes/stockfish.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import gameRoutes from './routes/game.routes.js';
+import sharedGameRoutes from './routes/sharedGame.routes.js';
+import commentRoutes from './routes/comment.routes.js';
+import reportRoutes from './routes/report.routes.js';
+import adminRoutes from './routes/admin.routes.js';
+
 
 const app = express();
 
@@ -24,6 +30,12 @@ app.use('/api', apiRateLimiter);
 app.use('/api/health', healthRoutes);
 app.use('/api/stockfish', stockfishRoutes);
 app.use('/api/auth', authRoutes);
+
+app.use('/api/games', gameRoutes);
+app.use('/api/shared-games', sharedGameRoutes);
+app.use('/api/comments', commentRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
