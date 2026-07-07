@@ -15,6 +15,7 @@ import sharedGameCommentRoutes from './routes/sharedGameComment.routes.js';
 import likeRoutes from './routes/like.routes.js';
 import commentRoutes from './routes/comment.routes.js';
 import reportRoutes from './routes/report.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 
 const app = express();
 
@@ -43,6 +44,8 @@ app.use('/api/shared-games', sharedGameRoutes);
 
 app.use('/api/comments', commentRoutes);
 app.use('/api/reports', reportRoutes);
+
+app.use('/api/admin', adminRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
