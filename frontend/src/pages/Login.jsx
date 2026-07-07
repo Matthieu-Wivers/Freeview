@@ -105,7 +105,7 @@ export default function Login() {
             className={mode === 'login' ? 'active' : ''}
             onClick={() => setMode('login')}
           >
-            Connexion
+            Login
           </button>
 
           <button
@@ -113,7 +113,7 @@ export default function Login() {
             className={mode === 'register' ? 'active' : ''}
             onClick={() => setMode('register')}
           >
-            Inscription
+            Register
           </button>
         </div>
 
@@ -131,7 +131,7 @@ export default function Login() {
               onClick={handleGoogleLogin}
               disabled={loading}
             >
-              Continuer avec Google
+              Login with Google
             </button>
 
             <div className="login-separator">
@@ -145,14 +145,14 @@ export default function Login() {
         <form className="login-form" onSubmit={handleSubmit}>
           {mode === 'register' && (
             <label>
-              Nom d&apos;utilisateur
+              Username
               <input
                 type="text"
                 value={form.username}
                 onChange={(event) => updateField('username', event.target.value)}
                 required
                 autoComplete="username"
-                placeholder="Wivers"
+                placeholder="Username"
               />
             </label>
           )}
@@ -170,7 +170,7 @@ export default function Login() {
           </label>
 
           <label>
-            Mot de passe
+            Password
             <input
               type="password"
               value={form.password}
