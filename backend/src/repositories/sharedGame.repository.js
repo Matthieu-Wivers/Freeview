@@ -1,45 +1,103 @@
 import { pool } from '../db/pool.js';
 
+function parseJsonColumn(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value;
+  }
+
+  return null;
+}
+
+function stringifyJson(value) {
+  if (!value) {
+    return null;
+  }
+
+  return JSON.stringify(value);
+}
+
 function toSharedGame(row) {
   if (!row) {
     return null;
   }
 
+  const review = parseJsonColumn(row.review);
+  const analysisSummary = parseJsonColumn(row.analysis_summary);
+
   return {
     id: row.id,
+
     gameId: row.game_id,
     game_id: row.game_id,
+
     userId: row.user_id,
     user_id: row.user_id,
+
     username: row.username ?? null,
+
     title: row.title,
     description: row.description,
     visibility: row.visibility,
+
     moderationStatus: row.moderation_status,
     moderation_status: row.moderation_status,
+
     createdAt: row.created_at,
     created_at: row.created_at,
+
     updatedAt: row.updated_at,
     updated_at: row.updated_at,
+
     deletedAt: row.deleted_at,
     deleted_at: row.deleted_at,
+
     reviewedAt: row.reviewed_at,
     reviewed_at: row.reviewed_at,
-    review: row.review ?? null,
-    analysisSummary: row.analysis_summary ?? null,
-    analysis_summary: row.analysis_summary ?? null,
+
+    review,
+    reviewPayload: review,
+    review_payload: review,
+    analysis: review,
+
+    analysisSummary,
+    analysis_summary: analysisSummary,
+    summary: analysisSummary,
+
     whitePlayer: row.white_player ?? null,
     white_player: row.white_player ?? null,
+
     blackPlayer: row.black_player ?? null,
     black_player: row.black_player ?? null,
+
     result: row.result ?? null,
+
     playedAt: row.played_at ?? null,
     played_at: row.played_at ?? null,
+
     pgn: row.pgn ?? undefined,
+
     likeCount: Number(row.like_count ?? 0),
     like_count: Number(row.like_count ?? 0),
+    likesCount: Number(row.like_count ?? 0),
+    likes_count: Number(row.like_count ?? 0),
+
     commentCount: Number(row.comment_count ?? 0),
     comment_count: Number(row.comment_count ?? 0),
+    commentsCount: Number(row.comment_count ?? 0),
+    comments_count: Number(row.comment_count ?? 0),
+
     likedByMe: Boolean(row.liked_by_me),
     liked_by_me: Boolean(row.liked_by_me),
   };
@@ -80,7 +138,7 @@ export async function createSharedGameRecord({
         reviewed_at
       )
       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
-      RETURNING *
+      RETURNING id
     `,
     [
       gameId,
@@ -88,8 +146,8 @@ export async function createSharedGameRecord({
       title,
       description,
       visibility,
-      review ? JSON.stringify(review) : null,
-      analysisSummary ? JSON.stringify(analysisSummary) : null,
+      stringifyJson(review),
+      stringifyJson(analysisSummary),
       reviewedAt ?? null,
     ],
   );
@@ -100,7 +158,13 @@ export async function createSharedGameRecord({
   });
 }
 
-export async function listPublicSharedGames({ limit, offset, search, sort = 'latest', viewerId }) {
+export async function listPublicSharedGames({
+  limit,
+  offset,
+  search,
+  sort = 'latest',
+  viewerId,
+}) {
   const values = [limit, offset, viewerId ?? null];
   let searchSql = '';
 
@@ -133,13 +197,18 @@ export async function listPublicSharedGames({ limit, offset, search, sort = 'lat
         sg.review,
         sg.analysis_summary,
         sg.reviewed_at,
+
         up.username,
+
+        g.pgn,
         g.white_player,
         g.black_player,
         g.result,
         g.played_at,
+
         COALESCE(likes.like_count, 0)::INTEGER AS like_count,
         COALESCE(comments.comment_count, 0)::INTEGER AS comment_count,
+
         EXISTS (
           SELECT 1
           FROM game_likes gl
@@ -149,7 +218,7 @@ export async function listPublicSharedGames({ limit, offset, search, sort = 'lat
       FROM shared_games sg
       JOIN games g
         ON g.id = sg.game_id
-       AND g.deleted_at IS NULL
+        AND g.deleted_at IS NULL
       LEFT JOIN user_profiles up
         ON up.user_id = sg.user_id
       LEFT JOIN (
@@ -183,14 +252,31 @@ export async function listSharedGamesByUserId(userId, { limit, offset, sort = 'l
   const queryResult = await pool.query(
     `
       SELECT
-        sg.*,
+        sg.id,
+        sg.game_id,
+        sg.user_id,
+        sg.title,
+        sg.description,
+        sg.visibility,
+        sg.moderation_status,
+        sg.created_at,
+        sg.updated_at,
+        sg.deleted_at,
+        sg.review,
+        sg.analysis_summary,
+        sg.reviewed_at,
+
         up.username,
+
+        g.pgn,
         g.white_player,
         g.black_player,
         g.result,
         g.played_at,
+
         COALESCE(likes.like_count, 0)::INTEGER AS like_count,
         COALESCE(comments.comment_count, 0)::INTEGER AS comment_count,
+
         EXISTS (
           SELECT 1
           FROM game_likes gl
@@ -200,7 +286,7 @@ export async function listSharedGamesByUserId(userId, { limit, offset, sort = 'l
       FROM shared_games sg
       JOIN games g
         ON g.id = sg.game_id
-       AND g.deleted_at IS NULL
+        AND g.deleted_at IS NULL
       LEFT JOIN user_profiles up
         ON up.user_id = sg.user_id
       LEFT JOIN (
@@ -228,19 +314,38 @@ export async function listSharedGamesByUserId(userId, { limit, offset, sort = 'l
   return queryResult.rows.map(toSharedGame);
 }
 
-export async function findSharedGameForViewer(sharedGameId, { viewerId = null, viewerRole = null } = {}) {
+export async function findSharedGameForViewer(
+  sharedGameId,
+  { viewerId = null, viewerRole = null } = {},
+) {
   const queryResult = await pool.query(
     `
       SELECT
-        sg.*,
+        sg.id,
+        sg.game_id,
+        sg.user_id,
+        sg.title,
+        sg.description,
+        sg.visibility,
+        sg.moderation_status,
+        sg.created_at,
+        sg.updated_at,
+        sg.deleted_at,
+        sg.review,
+        sg.analysis_summary,
+        sg.reviewed_at,
+
         up.username,
+
         g.pgn,
         g.white_player,
         g.black_player,
         g.result,
         g.played_at,
+
         COALESCE(likes.like_count, 0)::INTEGER AS like_count,
         COALESCE(comments.comment_count, 0)::INTEGER AS comment_count,
+
         EXISTS (
           SELECT 1
           FROM game_likes gl
@@ -250,7 +355,7 @@ export async function findSharedGameForViewer(sharedGameId, { viewerId = null, v
       FROM shared_games sg
       JOIN games g
         ON g.id = sg.game_id
-       AND g.deleted_at IS NULL
+        AND g.deleted_at IS NULL
       LEFT JOIN user_profiles up
         ON up.user_id = sg.user_id
       LEFT JOIN (
@@ -291,11 +396,30 @@ export async function findSharedGameForViewer(sharedGameId, { viewerId = null, v
 export async function findSharedGameById(sharedGameId) {
   const queryResult = await pool.query(
     `
-      SELECT sg.*
+      SELECT
+        sg.id,
+        sg.game_id,
+        sg.user_id,
+        sg.title,
+        sg.description,
+        sg.visibility,
+        sg.moderation_status,
+        sg.created_at,
+        sg.updated_at,
+        sg.deleted_at,
+        sg.review,
+        sg.analysis_summary,
+        sg.reviewed_at,
+
+        g.pgn,
+        g.white_player,
+        g.black_player,
+        g.result,
+        g.played_at
       FROM shared_games sg
       JOIN games g
         ON g.id = sg.game_id
-       AND g.deleted_at IS NULL
+        AND g.deleted_at IS NULL
       WHERE sg.id = $1
       AND sg.deleted_at IS NULL
       LIMIT 1
@@ -309,11 +433,24 @@ export async function findSharedGameById(sharedGameId) {
 export async function findCommentableSharedGame(sharedGameId) {
   const queryResult = await pool.query(
     `
-      SELECT sg.*
+      SELECT
+        sg.id,
+        sg.game_id,
+        sg.user_id,
+        sg.title,
+        sg.description,
+        sg.visibility,
+        sg.moderation_status,
+        sg.created_at,
+        sg.updated_at,
+        sg.deleted_at,
+        sg.review,
+        sg.analysis_summary,
+        sg.reviewed_at
       FROM shared_games sg
       JOIN games g
         ON g.id = sg.game_id
-       AND g.deleted_at IS NULL
+        AND g.deleted_at IS NULL
       WHERE sg.id = $1
       AND sg.deleted_at IS NULL
       AND sg.moderation_status = 'visible'
@@ -360,8 +497,8 @@ export async function updateOwnedSharedGameRecord(
       title,
       description,
       visibility,
-      review ? JSON.stringify(review) : null,
-      analysisSummary ? JSON.stringify(analysisSummary) : null,
+      stringifyJson(review),
+      stringifyJson(analysisSummary),
       reviewedAt ?? null,
     ],
   );
