@@ -15,7 +15,7 @@ export default function ChessPreview({ pgn = '', compact = false }) {
 
   return (
     <div className={compact ? 'community-board community-board--compact' : 'community-board'}>
-      <div className="community-board__grid" aria-label="Aperçu échiquier">
+      <div className="community-board__grid" aria-label="Chessboard preview">
         {ranks.flatMap((rank, rankIndex) =>
           files.map((file, fileIndex) => {
             const square = `${file}${rank}`;
@@ -34,7 +34,7 @@ export default function ChessPreview({ pgn = '', compact = false }) {
       {!compact && (
         <div className="community-board__meta">
           <strong>{summary.white} vs {summary.black}</strong>
-          <span>{summary.result} · {summary.moveCount} coups</span>
+          <span>{summary.result} · {summary.moveCount} moves</span>
         </div>
       )}
     </div>

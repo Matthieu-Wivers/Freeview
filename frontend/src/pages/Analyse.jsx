@@ -59,6 +59,54 @@ function getGamePgn(game, pgnInput) {
   return game?.normalizedPgn || pgnInput.trim();
 }
 
+function buildSerializableReviewPayload(game, review) {
+  const summary = buildReviewSummary(game, review);
+
+  const compactMoveReviews = Array.isArray(review?.moveReviews)
+    ? review.moveReviews.map((move, index) => ({
+        ply: Number(move.ply ?? index + 1),
+        moveNumber: move.moveNumber ?? Math.ceil(Number(move.ply ?? index + 1) / 2),
+        playedSan: move.playedSan ?? move.san ?? move.move ?? null,
+        san: move.san ?? move.playedSan ?? move.move ?? null,
+        bestSan: move.bestSan ?? move.bestMoveSan ?? null,
+        bestMove: move.bestMove ?? null,
+        category: move.category ?? 'good',
+        label: move.label ?? move.category ?? 'Good move',
+        loss: Number(move.loss ?? 0),
+        comment: move.comment ?? '',
+      }))
+    : [];
+
+  const compactCriticalMoves = compactMoveReviews
+    .filter((move) => ['inaccuracy', 'miss', 'mistake', 'blunder'].includes(move.category))
+    .sort((left, right) => Number(right.loss ?? 0) - Number(left.loss ?? 0))
+    .slice(0, 10);
+
+  return {
+    accuracyWhite: Number(review?.accuracyWhite ?? 0),
+    accuracyBlack: Number(review?.accuracyBlack ?? 0),
+    averageLossWhite: Number(review?.averageLossWhite ?? 0),
+    averageLossBlack: Number(review?.averageLossBlack ?? 0),
+    finalEvaluation: Number(review?.finalEvaluation ?? 0),
+    categoryCounts: summary.categoryCounts ?? {},
+    moveReviews: compactMoveReviews,
+    summary: {
+      white: summary.white,
+      black: summary.black,
+      result: summary.result,
+      moveCount: summary.moveCount,
+      accuracyWhite: summary.accuracyWhite,
+      accuracyBlack: summary.accuracyBlack,
+      averageAccuracy: summary.averageAccuracy,
+      averageLossWhite: summary.averageLossWhite,
+      averageLossBlack: summary.averageLossBlack,
+      finalEvaluation: summary.finalEvaluation,
+      categoryCounts: summary.categoryCounts ?? {},
+      criticalMoves: compactCriticalMoves,
+    },
+  };
+}
+
 export default function Analyse() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -67,18 +115,14 @@ export default function Analyse() {
   const [pgnInput, setPgnInput] = useState('');
   const [game, setGame] = useState(null);
   const [review, setReview] = useState(null);
-
   const [currentPly, setCurrentPly] = useState(0);
   const [boardOrientation, setBoardOrientation] = useState('white');
   const [showBestMove, setShowBestMove] = useState(true);
-
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-
   const [sandboxFen, setSandboxFen] = useState(null);
   const [sandboxFeedback, setSandboxFeedback] = useState(null);
   const [visiblePgnArea, setVisiblePgnArea] = useState(false);
-
   const [shareTitle, setShareTitle] = useState('');
   const [shareDescription, setShareDescription] = useState('');
   const [shareVisibility, setShareVisibility] = useState('public');
@@ -88,9 +132,9 @@ export default function Analyse() {
   const autoAnalyzedPgnRef = useRef(null);
 
   const playedMoveReview =
-    currentPly > 0 ? review?.moveReviews[currentPly - 1] ?? null : null;
+    currentPly > 0 ? review?.moveReviews?.[currentPly - 1] ?? null : null;
 
-  const positionReview = review?.moveReviews[currentPly] ?? null;
+  const positionReview = review?.moveReviews?.[currentPly] ?? null;
 
   const clearSandbox = useCallback(() => {
     setSandboxFen(null);
@@ -162,7 +206,7 @@ export default function Analyse() {
   }, [game, currentPly]);
 
   const boardFen = sandboxFen ?? officialFen;
-  const currentEval = review?.evaluations[currentPly] ?? 0;
+  const currentEval = review?.evaluations?.[currentPly] ?? 0;
 
   const goPrev = useCallback(() => {
     setCurrentPly((value) => Math.max(value - 1, 0));
@@ -270,7 +314,9 @@ export default function Analyse() {
         source: 'pgn_import',
       });
 
-      const analysisSummary = buildReviewSummary(game, review);
+      const reviewPayload = buildSerializableReviewPayload(game, review);
+      const analysisSummary = reviewPayload.summary;
+      const reviewedAt = new Date().toISOString();
 
       const sharedGame = await createSharedGame({
         gameId: savedGame.id,
@@ -278,11 +324,15 @@ export default function Analyse() {
         title: shareTitle.trim(),
         description: shareDescription.trim(),
         visibility: shareVisibility,
-        review,
+        review: reviewPayload,
+        reviewPayload,
+        review_payload: reviewPayload,
+        analysis: reviewPayload,
         analysisSummary,
         analysis_summary: analysisSummary,
-        reviewedAt: new Date().toISOString(),
-        reviewed_at: new Date().toISOString(),
+        summary: analysisSummary,
+        reviewedAt,
+        reviewed_at: reviewedAt,
       });
 
       navigate(`/shared-games/${sharedGame.id}`);
@@ -298,11 +348,37 @@ export default function Analyse() {
   };
 
   return (
-    <div>
-      <div className="app-backdrop" />
+    <div className="page-shell">
+      <main className="app-content analysis-review-shell">
+        {game && review ? (
+          <aside className="analysis-side-actions" aria-label="Review actions">
+            <button className="side-action-button" type="button" onClick={togglePgnInput}>
+              {visiblePgnArea ? 'Hide PGN input' : 'Show PGN input'}
+            </button>
 
-      <main className="app-content">
-        {(!game || !review || visiblePgnArea) ? (
+            <button
+              className="side-action-button side-action-button--primary"
+              type="button"
+              onClick={() =>
+                document
+                  .getElementById('share-review-panel')
+                  ?.scrollIntoView({ behavior: 'smooth' })
+              }
+            >
+              Share review
+            </button>
+
+            <button
+              className="side-action-button"
+              type="button"
+              onClick={() => navigate('/community')}
+            >
+              Community
+            </button>
+          </aside>
+        ) : null}
+
+        {!game || !review || visiblePgnArea ? (
           <PgnInputPanel
             value={pgnInput}
             onChange={setPgnInput}
@@ -314,27 +390,19 @@ export default function Analyse() {
             isLoading={isLoading}
             error={error}
           />
-        ) : (
-          <div className="analysis-actions">
-            <button className="btn btn--primary" type="button" onClick={togglePgnInput}>
-              Show PGN input
-            </button>
-
-            <button className="btn btn--ghost" type="button" onClick={() => navigate('/community')}>
-              Open Review Hub
-            </button>
-          </div>
-        )}
+        ) : null}
 
         {game && review ? (
           <>
-            <section className="review-share-panel">
+            <section
+              className="review-share-panel review-share-panel--side"
+              id="share-review-panel"
+            >
               <div>
                 <p className="eyebrow">Ready to share</p>
                 <h2>Publish this analyzed review</h2>
                 <p>
-                  This will save the PGN, the Stockfish review, the accuracy summary,
-                  and the critical move list so other users can view the analyzed game.
+                  This will save the PGN and a compact review payload for the community.
                 </p>
               </div>
 
@@ -402,7 +470,7 @@ export default function Analyse() {
               onSelect={jumpToPly}
             />
 
-            <div className="main-grid">
+            <div className="main-grid main-grid--review-first">
               <ChessBoardPanel
                 game={game}
                 currentPly={currentPly}
