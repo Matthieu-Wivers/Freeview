@@ -22,7 +22,17 @@ export function getSharedReviewSummary(sharedGame) {
 
 export function hasSharedReview(sharedGame) {
   const review = getSharedReview(sharedGame);
-  return Boolean(review?.moveReviews?.length);
+  const summary = getSharedReviewSummary(sharedGame);
+
+  return Boolean(
+    review?.moveReviews?.length ||
+      summary?.criticalMoves?.length ||
+      summary?.averageAccuracy !== undefined ||
+      summary?.accuracyWhite !== undefined ||
+      summary?.accuracyBlack !== undefined ||
+      review?.accuracyWhite !== undefined ||
+      review?.accuracyBlack !== undefined,
+  );
 }
 
 export function countReviewCategories(review) {
@@ -46,8 +56,8 @@ export function countReviewCategories(review) {
 }
 
 export function getAverageAccuracy(review) {
-  const white = Number(review?.accuracyWhite ?? 0);
-  const black = Number(review?.accuracyBlack ?? 0);
+  const white = Number(review?.accuracyWhite ?? review?.whiteAccuracy);
+  const black = Number(review?.accuracyBlack ?? review?.blackAccuracy);
 
   if (!Number.isFinite(white) && !Number.isFinite(black)) {
     return 0;
@@ -88,17 +98,24 @@ export function buildReviewSummary(game, review) {
     black: game?.headers?.Black ?? 'Black',
     result: game?.headers?.Result ?? '*',
     moveCount: game?.moves?.length ?? 0,
+
     accuracyWhite: Number(review?.accuracyWhite ?? 0),
     accuracyBlack: Number(review?.accuracyBlack ?? 0),
     averageAccuracy: getAverageAccuracy(review),
+
     averageLossWhite: Number(review?.averageLossWhite ?? 0),
     averageLossBlack: Number(review?.averageLossBlack ?? 0),
     finalEvaluation: Number(review?.finalEvaluation ?? 0),
+
     categoryCounts,
+
     criticalMoves: criticalMoves.map((move) => ({
       ply: move.ply,
-      playedSan: move.playedSan,
-      bestSan: move.bestSan,
+      moveNumber: move.moveNumber ?? (move.ply ? Math.ceil(Number(move.ply) / 2) : null),
+      playedSan: move.playedSan ?? move.san ?? move.move ?? null,
+      san: move.san ?? move.playedSan ?? move.move ?? null,
+      bestSan: move.bestSan ?? null,
+      bestMove: move.bestMove ?? null,
       category: move.category,
       label: move.label,
       loss: move.loss,
