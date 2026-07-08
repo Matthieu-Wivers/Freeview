@@ -3,15 +3,16 @@ import { Link } from 'react-router-dom';
 
 import SharedGameCard from '../components/community/SharedGameCard';
 import { listSharedGames } from '../services/freeviewApi';
-
-const SORT_OPTIONS = [
-  { value: 'recent', label: 'Newest' },
-  { value: 'popular', label: 'Most liked' },
-  { value: 'commented', label: 'Most discussed' },
-];
+import { hasSharedReview } from '../utils/sharedReview';
 
 function getLikeCount(sharedGame) {
-  return Number(sharedGame.likes_count ?? sharedGame.like_count ?? sharedGame.likesCount ?? 0);
+  return Number(
+    sharedGame.likes_count ??
+      sharedGame.like_count ??
+      sharedGame.likesCount ??
+      sharedGame.likes ??
+      0,
+  );
 }
 
 function getCommentCount(sharedGame) {
@@ -24,79 +25,65 @@ function getCommentCount(sharedGame) {
   );
 }
 
-function hasReview(sharedGame) {
-  return Boolean(sharedGame.review || sharedGame.analysisSummary || sharedGame.analysis_summary);
-}
-
 export default function Community() {
   const [sharedGames, setSharedGames] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
   const [sort, setSort] = useState('recent');
   const [reviewOnly, setReviewOnly] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function loadSharedGames() {
+    setLoading(true);
+    setError('');
+
+    try {
+      const items = await listSharedGames({
+        visibility: 'public',
+        q: query.trim() || undefined,
+        sort,
+      });
+
+      setSharedGames(Array.isArray(items) ? items : []);
+    } catch (apiError) {
+      setError(apiError.message || 'Community posts could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    let mounted = true;
+    void loadSharedGames();
+  }, [sort]);
 
-    async function loadCommunity() {
-      setLoading(true);
-      setError('');
+  const visibleGames = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
 
-      try {
-        const data = await listSharedGames({
-          visibility: 'public',
-          limit: 50,
-        });
-
-        if (mounted) {
-          setSharedGames(Array.isArray(data) ? data : []);
-        }
-      } catch (apiError) {
-        if (mounted) {
-          setError(apiError instanceof Error ? apiError.message : 'Community posts could not be loaded.');
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadCommunity();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const visibleSharedGames = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
-
-    const filtered = sharedGames.filter((sharedGame) => {
-      if (reviewOnly && !hasReview(sharedGame)) {
+    const filtered = sharedGames.filter((game) => {
+      if (reviewOnly && !hasSharedReview(game)) {
         return false;
       }
 
-      if (!normalizedSearch) {
+      if (!normalizedQuery) {
         return true;
       }
 
-      const title = String(sharedGame.title ?? sharedGame.name ?? '').toLowerCase();
-      const description = String(sharedGame.description ?? '').toLowerCase();
-      const username = String(
-        sharedGame.username ??
-          sharedGame.author?.username ??
-          sharedGame.user?.username ??
-          sharedGame.email ??
-          '',
-      ).toLowerCase();
+      const text = [
+        game.title,
+        game.description,
+        game.username,
+        game.user?.username,
+        game.author?.username,
+        game.white_player,
+        game.whitePlayer,
+        game.black_player,
+        game.blackPlayer,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
 
-      return (
-        title.includes(normalizedSearch) ||
-        description.includes(normalizedSearch) ||
-        username.includes(normalizedSearch)
-      );
+      return text.includes(normalizedQuery);
     });
 
     return [...filtered].sort((left, right) => {
@@ -108,73 +95,77 @@ export default function Community() {
         return getCommentCount(right) - getCommentCount(left);
       }
 
-      return new Date(right.created_at ?? right.createdAt ?? 0) - new Date(left.created_at ?? left.createdAt ?? 0);
+      return new Date(right.created_at || right.createdAt || 0) -
+        new Date(left.created_at || left.createdAt || 0);
     });
-  }, [reviewOnly, search, sharedGames, sort]);
+  }, [query, reviewOnly, sharedGames, sort]);
 
-  const reviewCount = sharedGames.filter(hasReview).length;
-  const totalLikes = sharedGames.reduce((total, sharedGame) => total + getLikeCount(sharedGame), 0);
-  const totalComments = sharedGames.reduce((total, sharedGame) => total + getCommentCount(sharedGame), 0);
+  const reviewCount = sharedGames.filter(hasSharedReview).length;
+  const totalLikes = sharedGames.reduce((total, game) => total + getLikeCount(game), 0);
+  const totalComments = sharedGames.reduce((total, game) => total + getCommentCount(game), 0);
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    void loadSharedGames();
+  }
 
   return (
     <main className="community-page community-page--focused">
-      <section className="community-header community-header--compact">
-        <div>
+      <section className="community-hero">
+        <div className="community-hero__content">
           <p className="eyebrow">Community</p>
-          <h1>Shared reviews</h1>
-          <p className="subtle">
-            Browse analyzed games, read the review, and join the discussion.
+          <h1>Shared chess reviews</h1>
+          <p>
+            Explore analyzed games, jump into key moments, and discuss the review with other players.
           </p>
+
+          <div className="community-hero__actions">
+            <Link className="btn btn--primary" to="/analyse">
+              Review a game
+            </Link>
+            <Link className="btn btn--secondary" to="/profile">
+              My profile
+            </Link>
+          </div>
         </div>
 
-        <div className="community-header__actions">
-          <Link className="btn btn--primary" to="/analyse">
-            Review a game
-          </Link>
-          <Link className="btn btn--secondary" to="/profile">
-            My profile
-          </Link>
+        <div className="community-stats-grid" aria-label="Community statistics">
+          <article>
+            <strong>{reviewCount}</strong>
+            <span>Reviews</span>
+          </article>
+          <article>
+            <strong>{totalLikes}</strong>
+            <span>Likes</span>
+          </article>
+          <article>
+            <strong>{totalComments}</strong>
+            <span>Comments</span>
+          </article>
         </div>
       </section>
 
-      <section className="community-stats community-stats--compact" aria-label="Community statistics">
-        <article>
-          <strong>{reviewCount}</strong>
-          <span>reviews</span>
-        </article>
-        <article>
-          <strong>{totalLikes}</strong>
-          <span>likes</span>
-        </article>
-        <article>
-          <strong>{totalComments}</strong>
-          <span>comments</span>
-        </article>
-      </section>
-
-      <section className="community-filters community-filters--sticky">
-        <label className="community-search">
-          <span className="sr-only">Search posts</span>
+      <form className="community-toolbar" onSubmit={handleSubmit}>
+        <label className="community-toolbar__search">
+          <span>Search</span>
           <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by title, player, or username"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search by title, player, username..."
             type="search"
           />
         </label>
 
-        <label className="community-select">
+        <label>
           <span>Sort</span>
           <select value={sort} onChange={(event) => setSort(event.target.value)}>
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
+            <option value="recent">Newest</option>
+            <option value="popular">Most liked</option>
+            <option value="commented">Most discussed</option>
           </select>
         </label>
 
-        <label className="community-toggle">
+        <label className="community-toolbar__toggle">
           <input
             type="checkbox"
             checked={reviewOnly}
@@ -182,7 +173,18 @@ export default function Community() {
           />
           <span>Reviews only</span>
         </label>
-      </section>
+
+        <button className="btn btn--secondary" type="submit">
+          Search
+        </button>
+      </form>
+
+      {loading ? (
+        <section className="community-state">
+          <h2>Loading reviews...</h2>
+          <p>The community feed is being prepared.</p>
+        </section>
+      ) : null}
 
       {error ? (
         <section className="community-state community-state--error">
@@ -191,30 +193,26 @@ export default function Community() {
         </section>
       ) : null}
 
-      {loading ? (
+      {!loading && !error && visibleGames.length === 0 ? (
         <section className="community-state">
-          <h2>Loading posts...</h2>
-        </section>
-      ) : null}
-
-      {!loading && visibleSharedGames.length === 0 ? (
-        <section className="community-state">
-          <h2>No posts found</h2>
-          <p>Try another search or share your first analyzed review.</p>
+          <h2>No review found</h2>
+          <p>Try another search or publish your first analyzed game.</p>
           <Link className="btn btn--primary" to="/analyse">
             Review a game
           </Link>
         </section>
       ) : null}
 
-      <section className="shared-game-list shared-game-list--framed">
-        {visibleSharedGames.map((sharedGame) => (
-          <SharedGameCard
-            key={sharedGame.id || sharedGame.shared_game_id || sharedGame.sharedGameId}
-            sharedGame={sharedGame}
-          />
-        ))}
-      </section>
+      {!loading && !error && visibleGames.length > 0 ? (
+        <section className="shared-game-list shared-game-list--framed">
+          {visibleGames.map((sharedGame) => (
+            <SharedGameCard
+              key={sharedGame.id || sharedGame.shared_game_id || sharedGame.sharedGameId}
+              sharedGame={sharedGame}
+            />
+          ))}
+        </section>
+      ) : null}
     </main>
   );
 }

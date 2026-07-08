@@ -11,6 +11,7 @@ import {
   getSharedGame,
   likeSharedGame,
   listComments,
+  moderateComment,
   moderateSharedGame,
   unlikeSharedGame,
   updateComment,
@@ -20,9 +21,9 @@ import {
   getAuthor,
   getCommentCount,
   getLikeCount,
-  getSharedGameId,
   getSharedGameTitle,
   getUserDisplayName,
+  userOwnsResource,
 } from '../utils/pgn';
 import { hasSharedReview } from '../utils/sharedReview';
 
@@ -30,118 +31,132 @@ function sameId(left, right) {
   return Boolean(left && right && String(left) === String(right));
 }
 
-function getCommentId(comment) {
-  return comment.id ?? comment.commentId ?? comment.comment_id;
-}
-
-function getCommentUserId(comment) {
-  return comment.userId ?? comment.user_id ?? comment.author?.id ?? comment.author_id;
-}
-
 function getCommentAuthor(comment) {
+  return {
+    username:
+      comment.username ||
+      comment.user?.username ||
+      comment.author?.username ||
+      comment.authorName ||
+      comment.author_name,
+    email:
+      comment.email ||
+      comment.user?.email ||
+      comment.author?.email,
+  };
+}
+
+function getCommentId(comment) {
+  return comment.id || comment.commentId || comment.comment_id;
+}
+
+function getCommentOwnerId(comment) {
   return (
-    comment.username ??
-    comment.author?.username ??
-    comment.authorName ??
-    comment.author_name ??
-    comment.user?.username ??
-    'Unknown user'
+    comment.user_id ||
+    comment.userId ||
+    comment.user?.id ||
+    comment.author?.id ||
+    null
   );
+}
+
+function getSharedGameAuthor(sharedGame) {
+  const author = getAuthor(sharedGame || {});
+
+  if (author && Object.keys(author).length > 0) {
+    return author;
+  }
+
+  return {
+    username: sharedGame?.username,
+    email: sharedGame?.email,
+  };
 }
 
 export default function SharedGameDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isAdmin } = useAuth();
 
   const [sharedGame, setSharedGame] = useState(null);
   const [comments, setComments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [newComment, setNewComment] = useState('');
-  const [commentError, setCommentError] = useState('');
-  const [commentBusy, setCommentBusy] = useState(false);
+  const [commentContent, setCommentContent] = useState('');
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingContent, setEditingContent] = useState('');
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reportReason, setReportReason] = useState('Inappropriate content');
   const [reportDetails, setReportDetails] = useState('');
-  const [reportStatus, setReportStatus] = useState('');
+  const [reportReason, setReportReason] = useState('inappropriate_content');
+  const [reportOpen, setReportOpen] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [commentBusy, setCommentBusy] = useState(false);
   const [reportBusy, setReportBusy] = useState(false);
-  const [likeBusy, setLikeBusy] = useState(false);
-  const [localLiked, setLocalLiked] = useState(false);
-  const [localLikeCount, setLocalLikeCount] = useState(0);
   const [moderationBusy, setModerationBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
-  const viewerId = user?.id ?? user?.userId ?? user?.user_id;
-  const isAdmin = user?.role === 'ADMIN';
-  const sharedGameId = sharedGame ? getSharedGameId(sharedGame) : id;
-  const ownerId = sharedGame?.userId ?? sharedGame?.user_id;
-  const canManageSharedGame = sameId(ownerId, viewerId) || isAdmin;
+  const author = useMemo(() => getSharedGameAuthor(sharedGame), [sharedGame]);
   const reviewed = hasSharedReview(sharedGame);
-  const author = useMemo(() => getAuthor(sharedGame), [sharedGame]);
+  const canManageSharedGame = isAdmin || userOwnsResource(user, sharedGame || {});
 
-  async function loadSharedGame() {
+  async function loadPage() {
     setLoading(true);
     setError('');
 
     try {
-      const data = await getSharedGame(id);
-      setSharedGame(data);
-      setLocalLiked(Boolean(data.likedByMe ?? data.liked_by_me));
-      setLocalLikeCount(getLikeCount(data));
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'The shared review could not be loaded.');
+      const [nextSharedGame, nextComments] = await Promise.all([
+        getSharedGame(id),
+        listComments(id).catch(() => []),
+      ]);
+
+      setSharedGame(nextSharedGame);
+      setComments(Array.isArray(nextComments) ? nextComments : []);
+      setLikeCount(getLikeCount(nextSharedGame));
+      setIsLiked(
+        Boolean(
+          nextSharedGame.viewer_has_liked ||
+            nextSharedGame.viewerHasLiked ||
+            nextSharedGame.likedByCurrentUser ||
+            nextSharedGame.likedByMe ||
+            nextSharedGame.liked_by_me,
+        ),
+      );
+    } catch (apiError) {
+      setError(apiError.message || 'The shared review could not be loaded.');
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadComments() {
-    setCommentsLoading(true);
-
-    try {
-      const data = await listComments(id);
-      setComments(Array.isArray(data) ? data : []);
-    } catch {
-      setComments([]);
-    } finally {
-      setCommentsLoading(false);
-    }
-  }
-
   useEffect(() => {
-    void loadSharedGame();
-    void loadComments();
+    void loadPage();
   }, [id]);
 
-  async function handleToggleLike() {
+  async function handleLike() {
     if (!isAuthenticated) {
       navigate('/login');
       return;
     }
 
-    setLikeBusy(true);
+    const nextLiked = !isLiked;
+
+    setIsLiked(nextLiked);
+    setLikeCount((count) => Math.max(0, count + (nextLiked ? 1 : -1)));
 
     try {
-      if (localLiked) {
-        await unlikeSharedGame(sharedGameId);
-        setLocalLiked(false);
-        setLocalLikeCount((value) => Math.max(0, value - 1));
+      if (nextLiked) {
+        await likeSharedGame(id);
       } else {
-        await likeSharedGame(sharedGameId);
-        setLocalLiked(true);
-        setLocalLikeCount((value) => value + 1);
+        await unlikeSharedGame(id);
       }
-    } catch (likeError) {
-      setError(likeError instanceof Error ? likeError.message : 'The like action failed.');
-    } finally {
-      setLikeBusy(false);
+    } catch (apiError) {
+      setIsLiked(!nextLiked);
+      setLikeCount((count) => Math.max(0, count + (nextLiked ? -1 : 1)));
+      setError(apiError.message || 'The like action failed.');
     }
   }
 
-  async function handleCreateComment(event) {
+  async function handleCommentSubmit(event) {
     event.preventDefault();
 
     if (!isAuthenticated) {
@@ -149,101 +164,145 @@ export default function SharedGameDetail() {
       return;
     }
 
-    if (!newComment.trim()) {
-      setCommentError('Comment cannot be empty.');
+    if (!commentContent.trim()) {
+      setError('Comment cannot be empty.');
       return;
     }
 
     setCommentBusy(true);
-    setCommentError('');
+    setError('');
 
     try {
-      const created = await createComment(sharedGameId, newComment.trim());
-      setComments((value) => [...value, created]);
-      setNewComment('');
-    } catch (createError) {
-      setCommentError(createError instanceof Error ? createError.message : 'The comment could not be posted.');
+      const newComment = await createComment(id, commentContent.trim());
+      setComments((items) => [...items, newComment]);
+      setCommentContent('');
+      setMessage('Comment posted.');
+    } catch (apiError) {
+      setError(apiError.message || 'The comment could not be posted.');
     } finally {
       setCommentBusy(false);
     }
   }
 
-  async function handleUpdateComment(commentId) {
+  async function handleCommentUpdate(commentId) {
     if (!editingContent.trim()) {
-      setCommentError('Comment cannot be empty.');
+      setError('Comment cannot be empty.');
       return;
     }
 
     setCommentBusy(true);
-    setCommentError('');
+    setError('');
 
     try {
-      const updated = await updateComment(commentId, editingContent.trim());
-      setComments((value) =>
-        value.map((comment) => (sameId(getCommentId(comment), commentId) ? updated : comment)),
+      const updatedComment = await updateComment(commentId, editingContent.trim());
+
+      setComments((items) =>
+        items.map((comment) =>
+          sameId(getCommentId(comment), commentId)
+            ? { ...comment, ...updatedComment }
+            : comment,
+        ),
       );
+
       setEditingCommentId(null);
       setEditingContent('');
-    } catch (updateError) {
-      setCommentError(updateError instanceof Error ? updateError.message : 'The comment could not be updated.');
+      setMessage('Comment updated.');
+    } catch (apiError) {
+      setError(apiError.message || 'The comment could not be updated.');
     } finally {
       setCommentBusy(false);
     }
   }
 
-  async function handleDeleteComment(commentId) {
+  async function handleCommentDelete(commentId) {
     setCommentBusy(true);
-    setCommentError('');
+    setError('');
 
     try {
       await deleteComment(commentId);
-      setComments((value) => value.filter((comment) => !sameId(getCommentId(comment), commentId)));
-    } catch (deleteError) {
-      setCommentError(deleteError instanceof Error ? deleteError.message : 'The comment could not be deleted.');
+      setComments((items) => items.filter((comment) => !sameId(getCommentId(comment), commentId)));
+      setMessage('Comment deleted.');
+    } catch (apiError) {
+      setError(apiError.message || 'The comment could not be deleted.');
     } finally {
       setCommentBusy(false);
     }
   }
 
-  async function handleReport(event) {
-    event.preventDefault();
-
+  async function handleReport(targetType, targetId) {
     if (!isAuthenticated) {
       navigate('/login');
       return;
     }
 
     setReportBusy(true);
-    setReportStatus('');
+    setError('');
 
     try {
       await createReport({
-        target_type: 'shared_game',
-        targetType: 'shared_game',
-        shared_game_id: sharedGameId,
-        sharedGameId,
+        target_type: targetType,
+        targetType,
+        target_id: targetId,
+        targetId,
+
+        shared_game_id: targetType === 'shared_game' ? id : undefined,
+        sharedGameId: targetType === 'shared_game' ? id : undefined,
+
+        comment_id: targetType === 'comment' ? targetId : undefined,
+        commentId: targetType === 'comment' ? targetId : undefined,
+
         reason: reportReason,
-        details: reportDetails,
+        details: reportDetails || 'Reported from the shared review page.',
       });
 
       setReportDetails('');
       setReportOpen(false);
-      setReportStatus('Report sent.');
-    } catch (reportError) {
-      setReportStatus(reportError instanceof Error ? reportError.message : 'The report could not be sent.');
+      setMessage('Report sent to moderation.');
+    } catch (apiError) {
+      setError(apiError.message || 'The report could not be sent.');
     } finally {
       setReportBusy(false);
     }
   }
 
-  async function handleModerate(status) {
+  async function handleSharedGameModeration(status) {
     setModerationBusy(true);
+    setError('');
 
     try {
-      const updated = await moderateSharedGame(sharedGameId, status);
-      setSharedGame(updated);
-    } catch (moderationError) {
-      setError(moderationError instanceof Error ? moderationError.message : 'Moderation failed.');
+      const updated = await moderateSharedGame(id, status);
+      setSharedGame((current) => ({
+        ...current,
+        ...updated,
+        moderation_status: status,
+        moderationStatus: status,
+      }));
+      setMessage('Post moderation updated.');
+    } catch (apiError) {
+      setError(apiError.message || 'Post moderation failed.');
+    } finally {
+      setModerationBusy(false);
+    }
+  }
+
+  async function handleCommentModeration(commentId, status) {
+    setModerationBusy(true);
+    setError('');
+
+    try {
+      await moderateComment(commentId, status);
+
+      setComments((items) =>
+        items.map((comment) =>
+          sameId(getCommentId(comment), commentId)
+            ? { ...comment, moderation_status: status, moderationStatus: status }
+            : comment,
+        ),
+      );
+
+      setMessage('Comment moderation updated.');
+    } catch (apiError) {
+      setError(apiError.message || 'Comment moderation failed.');
     } finally {
       setModerationBusy(false);
     }
@@ -251,12 +310,13 @@ export default function SharedGameDetail() {
 
   async function handleDeleteSharedGame() {
     setModerationBusy(true);
+    setError('');
 
     try {
-      await deleteSharedGame(sharedGameId);
+      await deleteSharedGame(id);
       navigate('/community');
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'The shared review could not be deleted.');
+    } catch (apiError) {
+      setError(apiError.message || 'The shared review could not be deleted.');
     } finally {
       setModerationBusy(false);
     }
@@ -267,6 +327,7 @@ export default function SharedGameDetail() {
       <main className="community-page">
         <section className="community-state">
           <h1>Loading shared review...</h1>
+          <p>The board and comments are being prepared.</p>
         </section>
       </main>
     );
@@ -300,15 +361,10 @@ export default function SharedGameDetail() {
         </button>
 
         <header className="shared-review-post__header">
-          <div>
+          <div className="shared-review-post__title-block">
             <div className="shared-detail-kicker">
               <span className="badge">{reviewed ? 'Shared review' : 'Shared game'}</span>
-              <span className="badge badge--muted">{sharedGame.visibility ?? 'public'}</span>
-              {sharedGame.moderationStatus !== 'visible' && sharedGame.moderation_status !== 'visible' ? (
-                <span className="badge badge--warning">
-                  {sharedGame.moderationStatus ?? sharedGame.moderation_status}
-                </span>
-              ) : null}
+              <span className="badge badge--muted">{sharedGame.visibility || 'public'}</span>
             </div>
 
             <h1>{getSharedGameTitle(sharedGame)}</h1>
@@ -321,12 +377,11 @@ export default function SharedGameDetail() {
 
           <div className="shared-review-post__actions">
             <button
-              className={`btn ${localLiked ? 'btn--primary' : 'btn--ghost'}`}
+              className={`btn ${isLiked ? 'btn--primary' : 'btn--ghost'}`}
               type="button"
-              onClick={handleToggleLike}
-              disabled={likeBusy}
+              onClick={handleLike}
             >
-              {localLiked ? 'Liked' : 'Like'} · {localLikeCount}
+              {isLiked ? 'Liked' : 'Like'} · {likeCount}
             </button>
 
             {canManageSharedGame ? (
@@ -343,14 +398,23 @@ export default function SharedGameDetail() {
         </header>
 
         {reportOpen ? (
-          <form className="report-popover" onSubmit={handleReport}>
+          <form
+            className="report-popover"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleReport('shared_game', id);
+            }}
+          >
             <label className="form-field">
               <span>Reason</span>
-              <select value={reportReason} onChange={(event) => setReportReason(event.target.value)}>
-                <option value="Inappropriate content">Inappropriate content</option>
-                <option value="Spam">Spam</option>
-                <option value="Harassment">Harassment</option>
-                <option value="Other">Other</option>
+              <select
+                value={reportReason}
+                onChange={(event) => setReportReason(event.target.value)}
+              >
+                <option value="inappropriate_content">Inappropriate content</option>
+                <option value="spam">Spam</option>
+                <option value="harassment">Harassment</option>
+                <option value="other">Other</option>
               </select>
             </label>
 
@@ -359,39 +423,44 @@ export default function SharedGameDetail() {
               <textarea
                 value={reportDetails}
                 onChange={(event) => setReportDetails(event.target.value)}
-                rows={3}
+                rows={4}
                 placeholder="Add context for moderators..."
               />
             </label>
-
-            {reportStatus ? <p className="inline-note">{reportStatus}</p> : null}
 
             <div className="input-actions">
               <button className="btn btn--primary" type="submit" disabled={reportBusy}>
                 {reportBusy ? 'Sending...' : 'Send report'}
               </button>
-              <button className="btn btn--ghost" type="button" onClick={() => setReportOpen(false)}>
+
+              <button
+                className="btn btn--ghost"
+                type="button"
+                onClick={() => setReportOpen(false)}
+              >
                 Cancel
               </button>
             </div>
           </form>
         ) : null}
 
-        {reportStatus && !reportOpen ? <p className="inline-note">{reportStatus}</p> : null}
-
         {sharedGame.description ? (
           <p className="shared-review-post__description">{sharedGame.description}</p>
         ) : null}
 
-        {error ? <p className="error-text">{error}</p> : null}
+        {(message || error) ? (
+          <p className={error ? 'feedback-message feedback-message--error' : 'feedback-message'}>
+            {error || message}
+          </p>
+        ) : null}
 
         <section className="shared-review-post__review">
           {reviewed ? (
             <SharedReviewPanel sharedGame={sharedGame} />
           ) : (
             <section className="community-state">
-              <h2>No review available</h2>
-              <p>This shared post does not contain a saved review payload.</p>
+              <h2>No review payload found</h2>
+              <p>This post was shared before review payloads were saved.</p>
             </section>
           )}
         </section>
@@ -403,19 +472,18 @@ export default function SharedGameDetail() {
             <p className="eyebrow">Discussion</p>
             <h2>Comments</h2>
           </div>
+
           <span className="badge">{getCommentCount(sharedGame) || comments.length}</span>
         </div>
 
         {isAuthenticated ? (
-          <form className="comment-form comment-form--wide" onSubmit={handleCreateComment}>
+          <form className="comment-form comment-form--wide" onSubmit={handleCommentSubmit}>
             <textarea
-              value={newComment}
-              onChange={(event) => setNewComment(event.target.value)}
-              placeholder="Share your thoughts about this review..."
+              value={commentContent}
+              onChange={(event) => setCommentContent(event.target.value)}
+              placeholder="Share a useful thought about the position, the plan, or the mistake..."
               rows={4}
             />
-
-            {commentError ? <p className="error-text">{commentError}</p> : null}
 
             <button className="btn btn--primary" type="submit" disabled={commentBusy}>
               {commentBusy ? 'Posting...' : 'Post comment'}
@@ -428,21 +496,22 @@ export default function SharedGameDetail() {
         )}
 
         <div className="comment-list comment-list--wide">
-          {commentsLoading ? <p className="inline-note">Loading comments...</p> : null}
-
-          {!commentsLoading && comments.length === 0 ? (
+          {comments.length === 0 ? (
             <p className="inline-note">No comments yet. Start the discussion.</p>
           ) : null}
 
           {comments.map((comment) => {
             const commentId = getCommentId(comment);
-            const canManageComment = sameId(getCommentUserId(comment), viewerId) || isAdmin;
+            const ownsComment =
+              userOwnsResource(user, comment) ||
+              sameId(user?.id || user?.user_id || user?.userId, getCommentOwnerId(comment));
+            const commentAuthor = getCommentAuthor(comment);
             const isEditing = sameId(editingCommentId, commentId);
 
             return (
-              <article className="comment-card comment-card--framed" key={commentId}>
+              <article key={commentId} className="comment-card comment-card--framed">
                 <header className="comment-card__header">
-                  <strong>{getCommentAuthor(comment)}</strong>
+                  <strong>{getUserDisplayName(commentAuthor)}</strong>
                   <span>{formatDate(comment.created_at || comment.createdAt)}</span>
                 </header>
 
@@ -454,18 +523,18 @@ export default function SharedGameDetail() {
                       rows={4}
                     />
 
-                    <div className="comment-card__actions">
+                    <div className="input-actions">
                       <button
                         className="btn btn--primary"
                         type="button"
-                        onClick={() => void handleUpdateComment(commentId)}
+                        onClick={() => void handleCommentUpdate(commentId)}
                         disabled={commentBusy}
                       >
                         Save
                       </button>
 
                       <button
-                        className="btn btn--ghost"
+                        className="btn btn--secondary"
                         type="button"
                         onClick={() => {
                           setEditingCommentId(null);
@@ -480,29 +549,64 @@ export default function SharedGameDetail() {
                   <p>{comment.content}</p>
                 )}
 
-                {canManageComment && !isEditing ? (
-                  <div className="comment-card__actions">
+                <div className="comment-card__actions">
+                  {ownsComment && !isEditing ? (
                     <button
                       className="btn btn--ghost"
                       type="button"
                       onClick={() => {
                         setEditingCommentId(commentId);
-                        setEditingContent(comment.content ?? '');
+                        setEditingContent(comment.content || '');
                       }}
                     >
                       Edit
                     </button>
+                  ) : null}
 
+                  {(ownsComment || isAdmin) ? (
                     <button
-                      className="btn btn--danger"
+                      className="btn btn--ghost"
                       type="button"
-                      onClick={() => void handleDeleteComment(commentId)}
+                      onClick={() => void handleCommentDelete(commentId)}
                       disabled={commentBusy}
                     >
                       Delete
                     </button>
-                  </div>
-                ) : null}
+                  ) : null}
+
+                  {isAuthenticated ? (
+                    <button
+                      className="btn btn--ghost"
+                      type="button"
+                      onClick={() => void handleReport('comment', commentId)}
+                      disabled={reportBusy}
+                    >
+                      Report
+                    </button>
+                  ) : null}
+
+                  {isAdmin ? (
+                    <>
+                      <button
+                        className="btn btn--ghost"
+                        type="button"
+                        onClick={() => void handleCommentModeration(commentId, 'hidden')}
+                        disabled={moderationBusy}
+                      >
+                        Hide
+                      </button>
+
+                      <button
+                        className="btn btn--ghost"
+                        type="button"
+                        onClick={() => void handleCommentModeration(commentId, 'visible')}
+                        disabled={moderationBusy}
+                      >
+                        Restore
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               </article>
             );
           })}
@@ -513,35 +617,26 @@ export default function SharedGameDetail() {
         <section className="admin-card admin-card--wide">
           <div>
             <p className="eyebrow">Admin</p>
-            <h2>Moderation</h2>
+            <h2>Post moderation</h2>
           </div>
 
           <div className="admin-card__actions">
             <button
               className="btn btn--ghost"
               type="button"
-              onClick={() => void handleModerate('visible')}
-              disabled={moderationBusy}
-            >
-              Mark visible
-            </button>
-
-            <button
-              className="btn btn--ghost"
-              type="button"
-              onClick={() => void handleModerate('hidden')}
+              onClick={() => void handleSharedGameModeration('hidden')}
               disabled={moderationBusy}
             >
               Hide
             </button>
 
             <button
-              className="btn btn--danger"
+              className="btn btn--ghost"
               type="button"
-              onClick={() => void handleModerate('deleted')}
+              onClick={() => void handleSharedGameModeration('visible')}
               disabled={moderationBusy}
             >
-              Mark deleted
+              Restore
             </button>
           </div>
         </section>
