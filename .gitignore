@@ -19,3 +19,7 @@ frontend/dist
 frontend/.vite
 frontend/.cache
 
+backend/coverage/
+backend/node_modules
+frontend/coverage/
+dist/

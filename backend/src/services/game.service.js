@@ -32,7 +32,6 @@ function parsePgnDate(value) {
   }
 
   const isoLike = cleaned.replaceAll('.', '-');
-
   if (!/^\d{4}-\d{2}-\d{2}$/.test(isoLike)) {
     return null;
   }
@@ -49,6 +48,19 @@ function extractResult(pgn, headers) {
 
   const match = pgn.match(/(?:^|\s)(1-0|0-1|1\/2-1\/2|\*)\s*$/);
   return match?.[1] ?? null;
+}
+
+function normalizePlayedAt(payload, headers) {
+  if (!payload.playedAt) {
+    return parsePgnDate(headers.date);
+  }
+
+  const parsed = new Date(payload.playedAt);
+  if (Number.isNaN(parsed.getTime())) {
+    throw createHttpError(400, 'INVALID_PLAYED_AT', 'Date de partie invalide.');
+  }
+
+  return parsed.toISOString();
 }
 
 function normalizeGamePayload(payload = {}, { partial = false } = {}) {
@@ -69,9 +81,7 @@ function normalizeGamePayload(payload = {}, { partial = false } = {}) {
   const blackPlayer = cleanNullableString(payload.blackPlayer ?? headers.black, { maxLength: 120 });
   const result = cleanNullableString(payload.result ?? extractResult(pgn, headers), { maxLength: 20 });
   const source = cleanString(payload.source ?? 'pgn_import', { maxLength: 20 });
-  const playedAt = payload.playedAt
-    ? new Date(payload.playedAt).toISOString()
-    : parsePgnDate(headers.date);
+  const playedAt = normalizePlayedAt(payload, headers);
 
   if (result && !VALID_RESULTS.has(result)) {
     throw createHttpError(400, 'INVALID_RESULT', 'Résultat de partie invalide.');
@@ -79,10 +89,6 @@ function normalizeGamePayload(payload = {}, { partial = false } = {}) {
 
   if (!VALID_SOURCES.has(source)) {
     throw createHttpError(400, 'INVALID_SOURCE', 'Source de partie invalide.');
-  }
-
-  if (payload.playedAt && Number.isNaN(new Date(payload.playedAt).getTime())) {
-    throw createHttpError(400, 'INVALID_PLAYED_AT', 'Date de partie invalide.');
   }
 
   return {
@@ -97,7 +103,11 @@ function normalizeGamePayload(payload = {}, { partial = false } = {}) {
 
 export async function importGame(userId, payload) {
   const normalized = normalizeGamePayload(payload);
-  return createGameRecord({ userId, ...normalized });
+
+  return createGameRecord({
+    userId,
+    ...normalized,
+  });
 }
 
 export async function listMyGames(userId, query) {
