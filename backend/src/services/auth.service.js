@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-
 import { env } from '../utils/env.utils.js';
 import {
   createUserWithEmailPassword,
@@ -20,9 +19,11 @@ function createHttpError(status, code, message) {
 
 function assertValidEmail(email) {
   const normalized = String(email ?? '').trim().toLowerCase();
+
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
     throw createHttpError(400, 'INVALID_EMAIL', 'Email invalide.');
   }
+
   return normalized;
 }
 
@@ -62,11 +63,15 @@ export async function verifyAuthToken(token) {
 }
 
 export async function registerWithEmailPassword({ email, password, username }) {
-  assertValidEmail(email);
+  const normalizedEmail = assertValidEmail(email);
   assertValidPassword(password);
 
   const passwordHash = await bcrypt.hash(password, 12);
-  const user = await createUserWithEmailPassword({ email, passwordHash, username });
+  const user = await createUserWithEmailPassword({
+    email: normalizedEmail,
+    passwordHash,
+    username,
+  });
 
   return {
     user,
@@ -75,9 +80,9 @@ export async function registerWithEmailPassword({ email, password, username }) {
 }
 
 export async function loginWithEmailPassword({ email, password }) {
-  assertValidEmail(email);
+  const normalizedEmail = assertValidEmail(email);
 
-  const authAccount = await findEmailAuthAccount(email);
+  const authAccount = await findEmailAuthAccount(normalizedEmail);
   if (!authAccount) {
     throw createHttpError(401, 'INVALID_CREDENTIALS', 'Email or password incorrect.');
   }

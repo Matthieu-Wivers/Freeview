@@ -1,22 +1,38 @@
-name: docker-publish
+name: Freeview CI/CD
 
 on:
   pull_request:
     branches:
       - main
+      - dev
+
   push:
     branches:
       - main
+      - dev
     tags:
       - "v*.*.*"
+
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: freeview-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22
+
 jobs:
-  ci-cd:
+  backend-unit-tests:
+    name: Backend unit tests
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
 
     steps:
       - name: Checkout repository
@@ -25,17 +41,114 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install backend dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run backend unit tests
+        run: npm test
+
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage
+          if-no-files-found: ignore
+
+  frontend-unit-tests:
+    name: Frontend unit tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Install frontend dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run frontend unit tests
+        run: npm test
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          if-no-files-found: ignore
+
+  frontend-build:
+    name: Frontend production build
+    runs-on: ubuntu-latest
+    needs:
+      - frontend-unit-tests
+
+    defaults:
+      run:
         working-directory: frontend
-        run: npm ci
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install frontend dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Build frontend
-        working-directory: frontend
         run: npm run build
+
+      - name: Upload frontend build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+
+  docker-build-and-push:
+    name: Docker build and push
+    runs-on: ubuntu-latest
+    needs:
+      - backend-unit-tests
+      - frontend-unit-tests
+      - frontend-build
+
+    env:
+      SHOULD_PUSH_IMAGE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v4
@@ -44,7 +157,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
+        if: env.SHOULD_PUSH_IMAGE == 'true'
         uses: docker/login-action@v4
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
@@ -66,7 +179,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ env.SHOULD_PUSH_IMAGE == 'true' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta_web.outputs.tags }}
           labels: ${{ steps.meta_web.outputs.labels }}
@@ -89,14 +202,14 @@ jobs:
         with:
           context: ./backend
           file: ./backend/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ env.SHOULD_PUSH_IMAGE == 'true' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta_api.outputs.tags }}
           labels: ${{ steps.meta_api.outputs.labels }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
-      - name: Extract PostgreSQL Docker metadata
+      - name: Extract database Docker metadata
         id: meta_db
         uses: docker/metadata-action@v6
         with:
@@ -107,14 +220,62 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
 
-      - name: Build and push PostgreSQL image
+      - name: Build and push database image
         uses: docker/build-push-action@v7
         with:
           context: ./db
           file: ./db/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ env.SHOULD_PUSH_IMAGE == 'true' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta_db.outputs.tags }}
           labels: ${{ steps.meta_db.outputs.labels }}
           cache-from: type=gha,scope=db
           cache-to: type=gha,mode=max,scope=db
+
+  deploy-production:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    needs:
+      - docker-build-and-push
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_PRODUCTION_DEPLOY == 'true'
+
+    environment:
+      name: production
+
+    env:
+      PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+      PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+      PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+      PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+      PROD_PROJECT_PATH: ${{ vars.PROD_PROJECT_PATH || '/opt/project/Freeview' }}
+
+    steps:
+      - name: Validate deployment configuration
+        run: |
+          test -n "$PROD_SSH_HOST" || (echo "Missing secret PROD_SSH_HOST" && exit 1)
+          test -n "$PROD_SSH_USER" || (echo "Missing secret PROD_SSH_USER" && exit 1)
+          test -n "$PROD_SSH_PORT" || (echo "Missing secret PROD_SSH_PORT or default port" && exit 1)
+          test -n "$PROD_SSH_KEY" || (echo "Missing secret PROD_SSH_KEY" && exit 1)
+          test -n "$PROD_PROJECT_PATH" || (echo "Missing variable PROD_PROJECT_PATH" && exit 1)
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/freeview_deploy_key
+          chmod 600 ~/.ssh/freeview_deploy_key
+          ssh-keyscan -p "$PROD_SSH_PORT" "$PROD_SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy on production server
+        run: |
+          ssh \
+            -i ~/.ssh/freeview_deploy_key \
+            -p "$PROD_SSH_PORT" \
+            "$PROD_SSH_USER@$PROD_SSH_HOST" \
+            "set -e
+             cd '$PROD_PROJECT_PATH'
+             git fetch origin main
+             git reset --hard origin/main
+             docker compose up -d --build --remove-orphans
+             docker image prune -f"
