@@ -1,3 +1,4 @@
+```txt
 Freeview — Architecture technique
 
 Client
@@ -28,3 +29,4 @@ Services d'analyse
 File d'attente d'analyse
     ↓
 Stockfish
+```
