@@ -5,10 +5,10 @@ import { listAdminReports, moderateComment, moderateSharedGame, updateAdminRepor
 import { formatDate, getUserDisplayName } from '../utils/pgn';
 
 const statusOptions = [
-  { value: 'open', label: 'Ouverts' },
-  { value: 'reviewed', label: 'Relus' },
-  { value: 'action_taken', label: 'Action effectuée' },
-  { value: 'rejected', label: 'Rejetés' },
+  { value: 'open', label: 'Open' },
+  { value: 'reviewed', label: 'Reviewed' },
+  { value: 'action_taken', label: 'Action taken' },
+  { value: 'rejected', label: 'Rejected' },
 ];
 
 export default function AdminReports() {
@@ -25,7 +25,7 @@ export default function AdminReports() {
       const items = await listAdminReports({ status });
       setReports(items);
     } catch (apiError) {
-      setError(apiError.message || 'Impossible de charger les signalements.');
+      setError(apiError.message || 'Unable to load reports.');
     } finally {
       setLoading(false);
     }
@@ -38,9 +38,16 @@ export default function AdminReports() {
   async function handleReportStatus(reportId, nextStatus) {
     try {
       const updated = await updateAdminReport(reportId, { status: nextStatus });
-      setReports((items) => items.map((report) => (String(report.id) === String(reportId) ? { ...report, ...updated, status: nextStatus } : report)));
+
+      setReports((items) =>
+        items.map((report) =>
+          String(report.id) === String(reportId)
+            ? { ...report, ...updated, status: nextStatus }
+            : report,
+        ),
+      );
     } catch (apiError) {
-      setError(apiError.message || 'Impossible de traiter le signalement.');
+      setError(apiError.message || 'Unable to process the report.');
     }
   }
 
@@ -54,9 +61,10 @@ export default function AdminReports() {
       } else {
         await moderateSharedGame(targetId, moderationStatus);
       }
+
       await handleReportStatus(report.id, 'action_taken');
     } catch (apiError) {
-      setError(apiError.message || 'Action de modération impossible.');
+      setError(apiError.message || 'Unable to apply moderation action.');
     }
   }
 
@@ -65,12 +73,16 @@ export default function AdminReports() {
       <section className="panel community-header">
         <div className="section-title-row">
           <div>
-            <p className="eyebrow">Administration</p>
-            <h1>Signalements</h1>
-            <p className="subtle">Traite les contenus signalés par les membres.</p>
+            <p className="eyebrow">Admin</p>
+            <h1>Reports</h1>
+            <p className="subtle">Review content reported by community members.</p>
           </div>
-          <Link className="btn btn--secondary" to="/admin/moderation">Modération</Link>
+
+          <Link className="btn btn--secondary" to="/admin/moderation">
+            Moderation
+          </Link>
         </div>
+
         <div className="community-tabs">
           {statusOptions.map((option) => (
             <button
@@ -85,8 +97,17 @@ export default function AdminReports() {
         </div>
       </section>
 
-      {loading && <p className="panel community-state">Chargement des signalements...</p>}
-      {error && <p className="panel community-state error-text">{error}</p>}
+      {loading && (
+        <p className="panel community-state">
+          Loading reports...
+        </p>
+      )}
+
+      {error && (
+        <p className="panel community-state error-text">
+          {error}
+        </p>
+      )}
 
       <div className="admin-list">
         {reports.map((report) => {
@@ -98,27 +119,76 @@ export default function AdminReports() {
             <article className="panel admin-card" key={report.id}>
               <div>
                 <p className="eyebrow">{targetType}</p>
-                <h2>Signalement #{report.id}</h2>
-                <p>{report.details || report.reason || 'Aucun détail fourni.'}</p>
+                <h2>Report #{report.id}</h2>
+                <p>{report.details || report.reason || 'No details provided.'}</p>
+
                 <div className="community-meta-list community-meta-list--inline">
-                  <span><strong>Auteur</strong>{getUserDisplayName(reporter)}</span>
-                  <span><strong>Statut</strong>{report.status}</span>
-                  <span><strong>Date</strong>{formatDate(report.created_at || report.createdAt)}</span>
+                  <span>
+                    <strong>Reporter</strong>
+                    {getUserDisplayName(reporter)}
+                  </span>
+
+                  <span>
+                    <strong>Status</strong>
+                    {report.status}
+                  </span>
+
+                  <span>
+                    <strong>Date</strong>
+                    {formatDate(report.created_at || report.createdAt)}
+                  </span>
                 </div>
               </div>
+
               <div className="admin-card__actions">
-                {targetType !== 'comment' && <Link className="btn btn--secondary" to={`/shared-games/${targetId}`}>Ouvrir</Link>}
-                <button className="btn btn--ghost" type="button" onClick={() => handleModeration(report, 'hidden')}>Masquer</button>
-                <button className="btn btn--ghost" type="button" onClick={() => handleModeration(report, 'visible')}>Restaurer</button>
-                <button className="btn btn--secondary" type="button" onClick={() => handleReportStatus(report.id, 'reviewed')}>Marquer relu</button>
-                <button className="btn btn--secondary" type="button" onClick={() => handleReportStatus(report.id, 'rejected')}>Rejeter</button>
+                {targetType !== 'comment' && (
+                  <Link className="btn btn--secondary" to={`/shared-games/${targetId}`}>
+                    Open
+                  </Link>
+                )}
+
+                <button
+                  className="btn btn--ghost"
+                  type="button"
+                  onClick={() => handleModeration(report, 'hidden')}
+                >
+                  Hide
+                </button>
+
+                <button
+                  className="btn btn--ghost"
+                  type="button"
+                  onClick={() => handleModeration(report, 'visible')}
+                >
+                  Restore
+                </button>
+
+                <button
+                  className="btn btn--secondary"
+                  type="button"
+                  onClick={() => handleReportStatus(report.id, 'reviewed')}
+                >
+                  Mark reviewed
+                </button>
+
+                <button
+                  className="btn btn--secondary"
+                  type="button"
+                  onClick={() => handleReportStatus(report.id, 'rejected')}
+                >
+                  Reject
+                </button>
               </div>
             </article>
           );
         })}
       </div>
 
-      {!loading && reports.length === 0 && <p className="panel community-state">Aucun signalement dans cette catégorie.</p>}
+      {!loading && reports.length === 0 && (
+        <p className="panel community-state">
+          No reports in this category.
+        </p>
+      )}
     </div>
   );
 }

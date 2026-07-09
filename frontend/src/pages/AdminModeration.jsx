@@ -15,10 +15,15 @@ export default function AdminModeration() {
     setError('');
 
     try {
-      const items = await listSharedGames({ moderation_status: moderationStatus, include_hidden: true, admin: true });
+      const items = await listSharedGames({
+        moderation_status: moderationStatus,
+        include_hidden: true,
+        admin: true,
+      });
+
       setSharedGames(items);
     } catch (apiError) {
-      setError(apiError.message || 'Impossible de charger les publications à modérer.');
+      setError(apiError.message || 'Unable to load posts for moderation.');
     } finally {
       setLoading(false);
     }
@@ -31,9 +36,16 @@ export default function AdminModeration() {
   async function handleModeration(sharedGameId, nextStatus) {
     try {
       await moderateSharedGame(sharedGameId, nextStatus);
-      setSharedGames((items) => items.map((item) => (String(item.id || item.shared_game_id) === String(sharedGameId) ? { ...item, moderation_status: nextStatus } : item)));
+
+      setSharedGames((items) =>
+        items.map((item) =>
+          String(item.id || item.shared_game_id) === String(sharedGameId)
+            ? { ...item, moderation_status: nextStatus }
+            : item,
+        ),
+      );
     } catch (apiError) {
-      setError(apiError.message || 'Action de modération impossible.');
+      setError(apiError.message || 'Unable to apply moderation action.');
     }
   }
 
@@ -42,12 +54,18 @@ export default function AdminModeration() {
       <section className="panel community-header">
         <div className="section-title-row">
           <div>
-            <p className="eyebrow">Administration</p>
-            <h1>Modération des publications</h1>
-            <p className="subtle">Masque ou restaure les parties partagées selon les règles de la communauté.</p>
+            <p className="eyebrow">Admin</p>
+            <h1>Post moderation</h1>
+            <p className="subtle">
+              Hide or restore shared games according to the community rules.
+            </p>
           </div>
-          <Link className="btn btn--secondary" to="/admin/reports">Signalements</Link>
+
+          <Link className="btn btn--secondary" to="/admin/reports">
+            Reports
+          </Link>
         </div>
+
         <div className="community-tabs">
           {['visible', 'pending_review', 'hidden', 'deleted'].map((status) => (
             <button
@@ -62,27 +80,65 @@ export default function AdminModeration() {
         </div>
       </section>
 
-      {loading && <p className="panel community-state">Chargement...</p>}
-      {error && <p className="panel community-state error-text">{error}</p>}
+      {loading && (
+        <p className="panel community-state">
+          Loading...
+        </p>
+      )}
+
+      {error && (
+        <p className="panel community-state error-text">
+          {error}
+        </p>
+      )}
 
       <div className="admin-list">
         {sharedGames.map((sharedGame) => {
           const id = sharedGame.id || sharedGame.shared_game_id;
+
           return (
             <div className="admin-moderation-item" key={id}>
               <SharedGameCard sharedGame={sharedGame} />
+
               <div className="panel admin-card__actions admin-card__actions--inline">
-                <Link className="btn btn--secondary" to={`/shared-games/${id}`}>Ouvrir</Link>
-                <button className="btn btn--ghost" type="button" onClick={() => handleModeration(id, 'hidden')}>Masquer</button>
-                <button className="btn btn--ghost" type="button" onClick={() => handleModeration(id, 'visible')}>Restaurer</button>
-                <button className="btn btn--ghost" type="button" onClick={() => handleModeration(id, 'deleted')}>Supprimer côté modération</button>
+                <Link className="btn btn--secondary" to={`/shared-games/${id}`}>
+                  Open
+                </Link>
+
+                <button
+                  className="btn btn--ghost"
+                  type="button"
+                  onClick={() => handleModeration(id, 'hidden')}
+                >
+                  Hide
+                </button>
+
+                <button
+                  className="btn btn--ghost"
+                  type="button"
+                  onClick={() => handleModeration(id, 'visible')}
+                >
+                  Restore
+                </button>
+
+                <button
+                  className="btn btn--ghost"
+                  type="button"
+                  onClick={() => handleModeration(id, 'deleted')}
+                >
+                  Delete from moderation
+                </button>
               </div>
             </div>
           );
         })}
       </div>
 
-      {!loading && sharedGames.length === 0 && <p className="panel community-state">Aucune publication pour ce statut.</p>}
+      {!loading && sharedGames.length === 0 && (
+        <p className="panel community-state">
+          No posts found for this status.
+        </p>
+      )}
     </div>
   );
 }
