@@ -1,5 +1,13 @@
+/**
+ * Central API error translation.
+ *
+ * Controllers and services can throw structured errors while this middleware
+ * converts them into stable HTTP responses. Production responses intentionally
+ * omit stack traces and database metadata.
+ */
 import { env } from '../utils/env.utils.js';
 
+// Preserve operational diagnostics in server logs without exposing them to clients.
 function formatErrorForLogs(error) {
   return {
     name: error?.name,
@@ -17,6 +25,9 @@ function formatErrorForLogs(error) {
   };
 }
 
+/**
+ * Returns a predictable payload for every unmatched route.
+ */
 export function notFoundHandler(req, res) {
   res.status(404).json({
     error: 'NOT_FOUND',
@@ -24,6 +35,10 @@ export function notFoundHandler(req, res) {
   });
 }
 
+/**
+ * Maps known parser errors and application errors to safe JSON responses.
+ * The four-argument signature is required for Express error middleware.
+ */
 export function errorHandler(error, req, res, _next) {
   if (error?.type === 'entity.too.large') {
     return res.status(413).json({
@@ -42,7 +57,8 @@ export function errorHandler(error, req, res, _next) {
   const status = Number.isInteger(error?.status) ? error.status : 500;
   const safeStatus = status >= 400 && status <= 599 ? status : 500;
 
-  if (safeStatus >= 500) {
+  // Server-side failures are logged with request context for incident diagnosis.
+if (safeStatus >= 500) {
     console.error('Unhandled API error:', {
       request: {
         method: req?.method,
@@ -52,15 +68,16 @@ export function errorHandler(error, req, res, _next) {
     });
   }
 
-  const payload = {
+  // Never disclose internal exception messages for production HTTP 500 responses.
+const payload = {
     error: error?.code ?? (safeStatus === 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR'),
-    message:
-      safeStatus === 500 && env.nodeEnv === 'production'
-        ? 'Erreur interne du serveur.'
-        : error?.message ?? 'Erreur interne du serveur.',
+    message: safeStatus === 500 && env.nodeEnv === 'production'
+      ? 'Erreur interne du serveur.'
+      : error?.message ?? 'Erreur interne du serveur.',
   };
 
-  if (env.nodeEnv !== 'production') {
+  // Rich diagnostics are limited to development environments.
+if (env.nodeEnv !== 'production') {
     if (error?.stack) {
       payload.stack = error.stack;
     }

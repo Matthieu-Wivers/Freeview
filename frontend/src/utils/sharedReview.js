@@ -1,5 +1,14 @@
+/**
+ * Pure domain helpers for sharing a Stockfish review.
+ *
+ * These functions contain no React state or network access, making the review
+ * compatibility and summary rules independently unit-testable.
+ */
 const BAD_CATEGORIES = new Set(['inaccuracy', 'miss', 'mistake', 'blunder']);
 
+/**
+ * Reads the canonical review while supporting payload names used by older API versions.
+ */
 export function getSharedReview(sharedGame) {
   return (
     sharedGame?.review ??
@@ -10,6 +19,9 @@ export function getSharedReview(sharedGame) {
   );
 }
 
+/**
+ * Resolves a precomputed summary and falls back to a summary embedded in the review.
+ */
 export function getSharedReviewSummary(sharedGame) {
   return (
     sharedGame?.analysisSummary ??
@@ -20,21 +32,27 @@ export function getSharedReviewSummary(sharedGame) {
   );
 }
 
+/**
+ * Detects meaningful review data instead of relying on object truthiness.
+ */
 export function hasSharedReview(sharedGame) {
   const review = getSharedReview(sharedGame);
   const summary = getSharedReviewSummary(sharedGame);
 
   return Boolean(
     review?.moveReviews?.length ||
-      summary?.criticalMoves?.length ||
-      summary?.averageAccuracy !== undefined ||
-      summary?.accuracyWhite !== undefined ||
-      summary?.accuracyBlack !== undefined ||
-      review?.accuracyWhite !== undefined ||
-      review?.accuracyBlack !== undefined,
+    summary?.criticalMoves?.length ||
+    summary?.averageAccuracy !== undefined ||
+    summary?.accuracyWhite !== undefined ||
+    summary?.accuracyBlack !== undefined ||
+    review?.accuracyWhite !== undefined ||
+    review?.accuracyBlack !== undefined,
   );
 }
 
+/**
+ * Counts known and future move categories without mutating the source review.
+ */
 export function countReviewCategories(review) {
   const counts = {
     theory: 0,
@@ -55,6 +73,9 @@ export function countReviewCategories(review) {
   return counts;
 }
 
+/**
+ * Computes an average from available player values and tolerates partial analyses.
+ */
 export function getAverageAccuracy(review) {
   const white = Number(review?.accuracyWhite ?? review?.whiteAccuracy);
   const black = Number(review?.accuracyBlack ?? review?.blackAccuracy);
@@ -74,6 +95,9 @@ export function getAverageAccuracy(review) {
   return (white + black) / 2;
 }
 
+/**
+ * Returns the highest-loss problematic moves as a new, bounded array.
+ */
 export function getCriticalMoves(review, limit = 8) {
   return [...(review?.moveReviews ?? [])]
     .filter((move) => BAD_CATEGORIES.has(move.category))
@@ -81,6 +105,9 @@ export function getCriticalMoves(review, limit = 8) {
     .slice(0, limit);
 }
 
+/**
+ * Builds a deterministic default title from PGN headers.
+ */
 export function buildReviewTitle(game) {
   const white = game?.headers?.White ?? 'White';
   const black = game?.headers?.Black ?? 'Black';
@@ -89,6 +116,10 @@ export function buildReviewTitle(game) {
   return `${white} vs ${black}${result} review`;
 }
 
+/**
+ * Produces the compact JSONB summary displayed in community cards.
+ * Only the fields required for listing are copied from the full review payload.
+ */
 export function buildReviewSummary(game, review) {
   const categoryCounts = countReviewCategories(review);
   const criticalMoves = getCriticalMoves(review, 5);
@@ -98,17 +129,13 @@ export function buildReviewSummary(game, review) {
     black: game?.headers?.Black ?? 'Black',
     result: game?.headers?.Result ?? '*',
     moveCount: game?.moves?.length ?? 0,
-
     accuracyWhite: Number(review?.accuracyWhite ?? 0),
     accuracyBlack: Number(review?.accuracyBlack ?? 0),
     averageAccuracy: getAverageAccuracy(review),
-
     averageLossWhite: Number(review?.averageLossWhite ?? 0),
     averageLossBlack: Number(review?.averageLossBlack ?? 0),
     finalEvaluation: Number(review?.finalEvaluation ?? 0),
-
     categoryCounts,
-
     criticalMoves: criticalMoves.map((move) => ({
       ply: move.ply,
       moveNumber: move.moveNumber ?? (move.ply ? Math.ceil(Number(move.ply) / 2) : null),
@@ -124,6 +151,9 @@ export function buildReviewSummary(game, review) {
   };
 }
 
+/**
+ * Builds an editable default description for the share form.
+ */
 export function buildReviewDescription(game, review) {
   const summary = buildReviewSummary(game, review);
   const criticalCount =
