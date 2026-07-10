@@ -1,5 +1,14 @@
+/**
+ * Shared HTTP client for the React application.
+ *
+ * It centralizes URL normalization, cookie-based credentials, JSON encoding and
+ * error translation so page components do not duplicate transport concerns.
+ */
 const API_BASE_URL = '/api';
 
+/**
+ * Error type carrying the HTTP status and parsed server payload for UI decisions.
+ */
 export class ApiError extends Error {
   constructor(message, status, payload) {
     super(message);
@@ -13,6 +22,9 @@ function isFormData(value) {
   return typeof FormData !== 'undefined' && value instanceof FormData;
 }
 
+/**
+ * Reads the body once and supports JSON, text and empty responses.
+ */
 async function readResponse(response) {
   const text = await response.text();
 
@@ -27,6 +39,9 @@ async function readResponse(response) {
   }
 }
 
+/**
+ * Accepts API-relative paths and absolute URLs without duplicating the /api prefix.
+ */
 function normalizePath(path) {
   if (!path) {
     return API_BASE_URL;
@@ -47,13 +62,20 @@ function normalizePath(path) {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
+/**
+ * Executes an API request using the application's httpOnly session cookie.
+ *
+ * Plain objects are serialized as JSON; FormData and string bodies retain their
+ * native encoding so the browser can provide the correct headers.
+ */
 export async function apiRequest(path, options = {}) {
   const { body, headers = {}, ...rest } = options;
   const hasBody = body !== undefined && body !== null;
   const shouldSendJson = hasBody && !isFormData(body) && typeof body !== 'string';
 
   const response = await fetch(normalizePath(path), {
-    credentials: 'include',
+    // Required for the browser to send and receive the authentication cookie.
+credentials: 'include',
     headers: {
       ...(shouldSendJson ? { 'content-type': 'application/json' } : {}),
       ...headers,
@@ -64,18 +86,23 @@ export async function apiRequest(path, options = {}) {
 
   const payload = await readResponse(response);
 
-  if (!response.ok) {
+  // Preserve the server's structured payload so forms can display precise errors.
+if (!response.ok) {
     const message =
       payload?.message ||
       payload?.error ||
       payload?.detail ||
       `Erreur API ${response.status}`;
+
     throw new ApiError(message, response.status, payload);
   }
 
   return payload;
 }
 
+/**
+ * Normalizes historical API envelope shapes to an array without throwing.
+ */
 export function asArray(payload, keys = []) {
   if (Array.isArray(payload)) {
     return payload;
@@ -106,6 +133,9 @@ export function asArray(payload, keys = []) {
   return [];
 }
 
+/**
+ * Normalizes historical API envelope shapes to an object without mutating input.
+ */
 export function asObject(payload, keys = []) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return {};
@@ -128,6 +158,9 @@ export function asObject(payload, keys = []) {
   return payload;
 }
 
+/**
+ * Builds an encoded query string while omitting unset optional parameters.
+ */
 export function buildQuery(params = {}) {
   const query = new URLSearchParams();
 
@@ -140,5 +173,6 @@ export function buildQuery(params = {}) {
   });
 
   const serialized = query.toString();
+
   return serialized ? `?${serialized}` : '';
 }

@@ -1,3 +1,10 @@
+/**
+ * Shared-review business service.
+ *
+ * This layer owns validation, authorization and compatibility normalization.
+ * It prevents controllers from containing business rules and prevents raw
+ * request data from reaching SQL repositories.
+ */
 import { assertUuid, createHttpError } from '../utils/httpError.utils.js';
 import { cleanNullableString, cleanString, parsePagination } from '../utils/request.utils.js';
 import { findOwnedGameById } from '../repositories/game.repository.js';
@@ -10,9 +17,14 @@ import {
   updateOwnedSharedGameRecord,
 } from '../repositories/sharedGame.repository.js';
 
+// Allowlists constrain values later used by visibility and ordering logic.
 const VISIBILITIES = new Set(['public', 'private', 'unlisted']);
 const SORTS = new Set(['latest', 'popular', 'commented']);
 
+/**
+ * Accepts API objects or serialized JSON, rejects arrays and caps the serialized
+ * size before the value is persisted in PostgreSQL JSONB.
+ */
 function normalizeJsonObject(value, fieldName, { maxLength = 250_000 } = {}) {
   if (value === undefined || value === null || value === '') {
     return null;
@@ -32,7 +44,8 @@ function normalizeJsonObject(value, fieldName, { maxLength = 250_000 } = {}) {
     throw createHttpError(400, `INVALID_${fieldName.toUpperCase()}`, `${fieldName} must be a JSON object.`);
   }
 
-  const serialized = JSON.stringify(parsed);
+  // Measure the persisted representation, not the JavaScript object reference.
+const serialized = JSON.stringify(parsed);
 
   if (serialized.length > maxLength) {
     throw createHttpError(
@@ -45,6 +58,10 @@ function normalizeJsonObject(value, fieldName, { maxLength = 250_000 } = {}) {
   return parsed;
 }
 
+/**
+ * Keeps review metadata internally consistent: no review means no review date,
+ * while a newly supplied review receives a server-generated timestamp.
+ */
 function normalizeReviewedAt(payload, existing, review) {
   const rawValue = payload.reviewedAt ?? payload.reviewed_at ?? existing.reviewedAt ?? existing.reviewed_at;
 
@@ -65,6 +82,11 @@ function normalizeReviewedAt(payload, existing, review) {
   return reviewedAt.toISOString();
 }
 
+/**
+ * Produces the only payload shape accepted by the repository.
+ * Legacy snake_case aliases are supported at this boundary and not propagated
+ * into the service's internal naming convention.
+ */
 function normalizeSharedGamePayload(payload = {}, existing = {}) {
   const title = cleanString(payload.title ?? existing.title, { maxLength: 120 });
   const description = cleanNullableString(payload.description ?? existing.description, { maxLength: 4000 });
@@ -79,7 +101,11 @@ function normalizeSharedGamePayload(payload = {}, existing = {}) {
   }
 
   const review = normalizeJsonObject(
-    payload.review ?? payload.reviewPayload ?? payload.review_payload ?? payload.analysis ?? existing.review,
+    payload.review ??
+      payload.reviewPayload ??
+      payload.review_payload ??
+      payload.analysis ??
+      existing.review,
     'review',
   );
 
@@ -105,16 +131,21 @@ function normalizeSharedGamePayload(payload = {}, existing = {}) {
   };
 }
 
+// Dynamic SQL ordering is safe only because the value is reduced to this allowlist.
 function normalizeSort(value) {
   const sort = cleanString(value ?? 'latest', { maxLength: 30 });
   return SORTS.has(sort) ? sort : 'latest';
 }
 
+/**
+ * Creates a publication only when the referenced game belongs to the caller.
+ */
 export async function createSharedGame(userId, payload) {
   const gameId = assertUuid(payload.gameId ?? payload.game_id, 'gameId');
   const game = await findOwnedGameById(gameId, userId);
 
-  if (!game) {
+  // A single 404 avoids leaking whether a game exists but belongs to another user.
+if (!game) {
     throw createHttpError(404, 'GAME_NOT_FOUND', 'Game not found or not allowed.');
   }
 
@@ -127,6 +158,9 @@ export async function createSharedGame(userId, payload) {
   });
 }
 
+/**
+ * Sanitizes pagination, search and sort criteria before querying public content.
+ */
 export async function listCommunitySharedGames(query, viewer) {
   const pagination = parsePagination(query);
   const search = cleanString(query.search ?? query.q ?? '', { maxLength: 120 });
@@ -150,9 +184,11 @@ export async function listMySharedGames(userId, query) {
   });
 }
 
+/**
+ * Delegates visibility and moderation filtering to a viewer-aware repository query.
+ */
 export async function getSharedGame(sharedGameId, viewer) {
   const id = assertUuid(sharedGameId, 'sharedGameId');
-
   const sharedGame = await findSharedGameForViewer(id, {
     viewerId: viewer?.id ?? null,
     viewerRole: viewer?.role ?? null,
@@ -165,9 +201,11 @@ export async function getSharedGame(sharedGameId, viewer) {
   return sharedGame;
 }
 
+/**
+ * Enforces ownership before replacing the normalized publication fields.
+ */
 export async function updateSharedGame(userId, sharedGameId, payload) {
   const id = assertUuid(sharedGameId, 'sharedGameId');
-
   const existing = await findSharedGameForViewer(id, {
     viewerId: userId,
     viewerRole: 'USER',
@@ -182,6 +220,9 @@ export async function updateSharedGame(userId, sharedGameId, payload) {
   return updateOwnedSharedGameRecord(id, userId, normalized);
 }
 
+/**
+ * Requests a soft delete so moderation and audit relationships remain intact.
+ */
 export async function deleteSharedGame(userId, sharedGameId) {
   const id = assertUuid(sharedGameId, 'sharedGameId');
   const deleted = await deleteOwnedSharedGameRecord(id, userId);
