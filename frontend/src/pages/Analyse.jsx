@@ -394,6 +394,55 @@ export default function Analyse() {
 
         {game && review ? (
           <>
+            <div className="top-grid">
+              <GameHeader headers={game.headers} />
+
+              <AccuracySummary
+                whiteName={game.headers.White ?? 'White'}
+                blackName={game.headers.Black ?? 'Black'}
+                accuracyWhite={review.accuracyWhite}
+                accuracyBlack={review.accuracyBlack}
+              />
+            </div>
+
+            <EvalChart
+              evaluations={review.evaluations}
+              currentPly={currentPly}
+              onSelect={jumpToPly}
+            />
+
+            <div className="main-grid main-grid--review-first">
+              <ChessBoardPanel
+                game={game}
+                currentPly={currentPly}
+                boardFen={boardFen}
+                boardOrientation={boardOrientation}
+                onPieceDrop={handlePieceDrop}
+                onFlip={() =>
+                  setBoardOrientation((value) => (value === 'white' ? 'black' : 'white'))
+                }
+                onPrev={goPrev}
+                onNext={goNext}
+                showBestMove={showBestMove}
+                onToggleBestMove={() => setShowBestMove((value) => !value)}
+                sandboxFeedback={sandboxFeedback}
+                isSandboxActive={Boolean(sandboxFen)}
+                onResetSandbox={resetSandbox}
+                playedMoveReview={playedMoveReview}
+                positionReview={positionReview}
+              />
+
+              <MovesSidebar
+                game={game}
+                review={review}
+                currentPly={currentPly}
+                currentEval={currentEval}
+                currentMoveIndex={currentPly}
+                sandboxFeedback={sandboxFeedback}
+                onJumpToPly={jumpToPly}
+              />
+            </div>
+
             <section
               className="review-share-panel review-share-panel--side"
               id="share-review-panel"
@@ -452,55 +501,6 @@ export default function Analyse() {
                 </button>
               </form>
             </section>
-
-            <div className="top-grid">
-              <GameHeader headers={game.headers} />
-
-              <AccuracySummary
-                whiteName={game.headers.White ?? 'White'}
-                blackName={game.headers.Black ?? 'Black'}
-                accuracyWhite={review.accuracyWhite}
-                accuracyBlack={review.accuracyBlack}
-              />
-            </div>
-
-            <EvalChart
-              evaluations={review.evaluations}
-              currentPly={currentPly}
-              onSelect={jumpToPly}
-            />
-
-            <div className="main-grid main-grid--review-first">
-              <ChessBoardPanel
-                game={game}
-                currentPly={currentPly}
-                boardFen={boardFen}
-                boardOrientation={boardOrientation}
-                onPieceDrop={handlePieceDrop}
-                onFlip={() =>
-                  setBoardOrientation((value) => (value === 'white' ? 'black' : 'white'))
-                }
-                onPrev={goPrev}
-                onNext={goNext}
-                showBestMove={showBestMove}
-                onToggleBestMove={() => setShowBestMove((value) => !value)}
-                sandboxFeedback={sandboxFeedback}
-                isSandboxActive={Boolean(sandboxFen)}
-                onResetSandbox={resetSandbox}
-                playedMoveReview={playedMoveReview}
-                positionReview={positionReview}
-              />
-
-              <MovesSidebar
-                game={game}
-                review={review}
-                currentPly={currentPly}
-                currentEval={currentEval}
-                currentMoveIndex={currentPly}
-                sandboxFeedback={sandboxFeedback}
-                onJumpToPly={jumpToPly}
-              />
-            </div>
           </>
         ) : null}
       </main>
