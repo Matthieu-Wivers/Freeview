@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { listAdminReports, moderateComment, moderateSharedGame, updateAdminReport } from '../services/freeviewApi';
+import {
+  listAdminReports,
+  moderateComment,
+  moderateSharedGame,
+  updateAdminReport,
+} from '../services/freeviewApi';
 import { formatDate, getUserDisplayName } from '../utils/pgn';
 
 const statusOptions = [
@@ -10,6 +15,52 @@ const statusOptions = [
   { value: 'action_taken', label: 'Action taken' },
   { value: 'rejected', label: 'Rejected' },
 ];
+
+function firstDefined(...values) {
+  return values.find(
+    (value) =>
+      value !== undefined &&
+      value !== null &&
+      String(value).trim() !== '' &&
+      String(value) !== 'undefined' &&
+      String(value) !== 'null',
+  );
+}
+
+function getReportTarget(report) {
+  const targetType = firstDefined(report.target_type, report.targetType);
+  const sharedGameId = firstDefined(
+    report.shared_game_id,
+    report.sharedGameId,
+    report.shared_game?.id,
+    report.sharedGame?.id,
+  );
+  const commentId = firstDefined(
+    report.comment_id,
+    report.commentId,
+    report.comment?.id,
+  );
+
+  return {
+    targetType,
+    sharedGameId,
+    commentId,
+    targetId: targetType === 'comment' ? commentId : sharedGameId,
+  };
+}
+
+function getReporterName(report) {
+  const directName = firstDefined(
+    report.reporter_username,
+    report.reporterUsername,
+  );
+
+  if (directName) {
+    return directName;
+  }
+
+  return getUserDisplayName(report.reporter || report.user || {});
+}
 
 export default function AdminReports() {
   const [reports, setReports] = useState([]);
@@ -23,7 +74,7 @@ export default function AdminReports() {
 
     try {
       const items = await listAdminReports({ status });
-      setReports(items);
+      setReports(Array.isArray(items) ? items : []);
     } catch (apiError) {
       setError(apiError.message || 'Unable to load reports.');
     } finally {
@@ -32,34 +83,50 @@ export default function AdminReports() {
   }
 
   useEffect(() => {
-    loadReports();
+    void loadReports();
   }, [status]);
 
   async function handleReportStatus(reportId, nextStatus) {
+    setError('');
+
     try {
       const updated = await updateAdminReport(reportId, { status: nextStatus });
 
-      setReports((items) =>
-        items.map((report) =>
+      setReports((items) => {
+        if (nextStatus !== status) {
+          return items.filter((report) => String(report.id) !== String(reportId));
+        }
+
+        return items.map((report) =>
           String(report.id) === String(reportId)
             ? { ...report, ...updated, status: nextStatus }
             : report,
-        ),
-      );
+        );
+      });
     } catch (apiError) {
       setError(apiError.message || 'Unable to process the report.');
+      throw apiError;
     }
   }
 
   async function handleModeration(report, moderationStatus) {
-    const targetType = report.target_type || report.targetType;
-    const targetId = report.target_id || report.targetId;
+    const { targetType, targetId } = getReportTarget(report);
+
+    setError('');
+
+    if (!targetType || !targetId) {
+      setError('This report does not contain a valid moderation target.');
+      return;
+    }
 
     try {
       if (targetType === 'comment') {
         await moderateComment(targetId, moderationStatus);
-      } else {
+      } else if (targetType === 'shared_game') {
         await moderateSharedGame(targetId, moderationStatus);
+      } else {
+        setError(`Unsupported report target: ${targetType}.`);
+        return;
       }
 
       await handleReportStatus(report.id, 'action_taken');
@@ -111,21 +178,29 @@ export default function AdminReports() {
 
       <div className="admin-list">
         {reports.map((report) => {
-          const reporter = report.reporter || report.user || {};
-          const targetType = report.target_type || report.targetType;
-          const targetId = report.target_id || report.targetId;
+          const { targetType, sharedGameId, targetId } = getReportTarget(report);
+          const reporterName = getReporterName(report);
+          const targetLabel = targetType === 'comment' ? 'Comment' : 'Shared review';
+          const targetPreview =
+            targetType === 'comment'
+              ? firstDefined(report.comment_content, report.commentContent)
+              : firstDefined(report.shared_game_title, report.sharedGameTitle);
+          const hasValidTarget = Boolean(targetType && targetId);
 
           return (
             <article className="panel admin-card" key={report.id}>
               <div>
-                <p className="eyebrow">{targetType}</p>
+                <p className="eyebrow">{targetLabel}</p>
                 <h2>Report #{report.id}</h2>
+
+                {targetPreview && <p className="subtle">{targetPreview}</p>}
+
                 <p>{report.details || report.reason || 'No details provided.'}</p>
 
                 <div className="community-meta-list community-meta-list--inline">
                   <span>
                     <strong>Reporter</strong>
-                    {getUserDisplayName(reporter)}
+                    {reporterName}
                   </span>
 
                   <span>
@@ -141,8 +216,11 @@ export default function AdminReports() {
               </div>
 
               <div className="admin-card__actions">
-                {targetType !== 'comment' && (
-                  <Link className="btn btn--secondary" to={`/shared-games/${targetId}`}>
+                {sharedGameId && (
+                  <Link
+                    className="btn btn--secondary"
+                    to={`/shared-games/${sharedGameId}`}
+                  >
                     Open
                   </Link>
                 )}
@@ -150,7 +228,8 @@ export default function AdminReports() {
                 <button
                   className="btn btn--ghost"
                   type="button"
-                  onClick={() => handleModeration(report, 'hidden')}
+                  onClick={() => void handleModeration(report, 'hidden')}
+                  disabled={!hasValidTarget}
                 >
                   Hide
                 </button>
@@ -158,7 +237,8 @@ export default function AdminReports() {
                 <button
                   className="btn btn--ghost"
                   type="button"
-                  onClick={() => handleModeration(report, 'visible')}
+                  onClick={() => void handleModeration(report, 'visible')}
+                  disabled={!hasValidTarget}
                 >
                   Restore
                 </button>
@@ -166,7 +246,7 @@ export default function AdminReports() {
                 <button
                   className="btn btn--secondary"
                   type="button"
-                  onClick={() => handleReportStatus(report.id, 'reviewed')}
+                  onClick={() => void handleReportStatus(report.id, 'reviewed')}
                 >
                   Mark reviewed
                 </button>
@@ -174,7 +254,7 @@ export default function AdminReports() {
                 <button
                   className="btn btn--secondary"
                   type="button"
-                  onClick={() => handleReportStatus(report.id, 'rejected')}
+                  onClick={() => void handleReportStatus(report.id, 'rejected')}
                 >
                   Reject
                 </button>
