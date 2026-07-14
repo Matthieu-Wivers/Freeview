@@ -4,7 +4,7 @@ import { useAuth } from '../../auth/AuthContext';
 
 const navLinks = [
   { label: 'Analyze', to: '/analyse' },
-  { label: 'Share Hub', to: '/hub' },
+  { label: 'Share Hub', to: '/community' },
 ];
 
 export default function Header() {
