@@ -8,12 +8,16 @@ const navLinks = [
 ];
 
 export default function Header() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isAdmin } = useAuth();
 
   const displayName = user?.username || user?.email || 'Compte';
   const accountPath = isAuthenticated ? '/profile' : '/login';
   const accountLabel = isAuthenticated ? displayName : 'Login';
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || '♙';
+
+  const visibleNavLinks = isAdmin
+    ? [...navLinks, { label: 'Admin reports', to: '/admin/reports' }]
+    : navLinks;
 
   return (
     <header className="site-header">
@@ -27,7 +31,7 @@ export default function Header() {
         </Link>
 
         <nav className="site-header__nav" aria-label="Main navigation">
-          {navLinks.map((link) => (
+          {visibleNavLinks.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
