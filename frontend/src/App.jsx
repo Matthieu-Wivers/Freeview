@@ -58,7 +58,7 @@ export default function App() {
           <Route path="/register" element={<GuestOnlyRoute><Login /></GuestOnlyRoute>} />
 
           <Route element={<MainLayout />}>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Navigate to="/analyse" replace />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/analyse" element={<Analyse />} />
             <Route path="/community" element={<Community />} />
