@@ -25,7 +25,7 @@ const SORTS = new Set(['latest', 'popular', 'commented']);
  * Accepts API objects or serialized JSON, rejects arrays and caps the serialized
  * size before the value is persisted in PostgreSQL JSONB.
  */
-function normalizeJsonObject(value, fieldName, { maxLength = 250_000 } = {}) {
+function normalizeJsonObject(value, fieldName, { maxLength = 550_000 } = {}) {
   if (value === undefined || value === null || value === '') {
     return null;
   }
